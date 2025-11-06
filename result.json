@@ -1,0 +1,362 @@
+[
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "content": "\t\t\t%s-----BEGIN RSA PRIVATE KEY-----",
+    "match": "-----BEGIN RSA PRIVATE KEY-----",
+    "pattern": "Asymmetric Private Key",
+    "line": "76",
+    "confidence": "high"
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "match": "-----END RSA PRIVATE KEY-----",
+    "content": "\t\t\t-----END RSA PRIVATE KEY-----",
+    "pattern": "private_key",
+    "confidence": "low",
+    "line": "90"
+  },
+  {
+    "line": "94",
+    "pattern": "Asymmetric Private Key",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "confidence": "high",
+    "match": "-----BEGIN EC PRIVATE KEY-----",
+    "content": "\t\t\t%s-----BEGIN EC PRIVATE KEY-----"
+  },
+  {
+    "content": "\t\t\t-----END EC PRIVATE KEY-----\"\"\".formatted(EXAMPLE_SECRET_QUALIFIER);",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "match": "-----END EC PRIVATE KEY-----",
+    "pattern": "private_key",
+    "confidence": "low",
+    "line": "98"
+  },
+  {
+    "content": "\tpublic static final String PRIVATE_DSA_KEY = EXAMPLE_SECRET_QUALIFIER + \"-----BEGIN PRIVATE KEY-----\\n\"",
+    "pattern": "Asymmetric Private Key",
+    "confidence": "high",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "line": "100"
+  },
+  {
+    "line": "113",
+    "content": "\t\t\t+ \"BB4CHHBQgJ3ST6U8rIxoTqGe42TiVckPf1PoSiJy8GY=\\n\" + \"-----END PRIVATE KEY-----\\n\";",
+    "pattern": "private_key",
+    "match": "-----END PRIVATE KEY-----",
+    "confidence": "low",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb"
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "line": "116",
+    "confidence": "high",
+    "content": "\t\t\t+ \"-----BEGIN PRIVATE KEY-----\\n\" + \"MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgd6SePFfpaTKFd1Gm\\n\"",
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "pattern": "Asymmetric Private Key"
+  },
+  {
+    "line": "119",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "confidence": "low",
+    "match": "-----END PRIVATE KEY-----",
+    "pattern": "private_key",
+    "content": "\t\t\t+ \"-----END PRIVATE KEY-----\\n\";"
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "line": "122",
+    "pattern": "Asymmetric Private Key",
+    "confidence": "high",
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----BEGIN PRIVATE KEY-----\\n\" + \"MIG/AgEAMBAGByqGSM49AgEGBSuBBAAiBIGnMIGkAgEBBDCexXiWKrtrqV1+d1Tv\\n\""
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "pattern": "private_key",
+    "match": "-----END PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----END PRIVATE KEY-----\\n\";",
+    "line": "126",
+    "confidence": "low"
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "confidence": "high",
+    "pattern": "Asymmetric Private Key",
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----BEGIN PRIVATE KEY-----\\n\" + \"MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQg4dVuddgQ6enDvPPw\\n\"",
+    "line": "129"
+  },
+  {
+    "line": "132",
+    "pattern": "private_key",
+    "match": "-----END PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----END PRIVATE KEY-----\\n\";",
+    "confidence": "low",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb"
+  },
+  {
+    "confidence": "high",
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----BEGIN PRIVATE KEY-----\\n\" + \"MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgU9+v5hUNnTKix8fe\\n\"",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "line": "135",
+    "pattern": "Asymmetric Private Key"
+  },
+  {
+    "confidence": "low",
+    "content": "\t\t\t+ \"-----END PRIVATE KEY-----\\n\";",
+    "pattern": "private_key",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "line": "138",
+    "match": "-----END PRIVATE KEY-----"
+  },
+  {
+    "match": "-----BEGIN PRIVATE KEY-----",
+    "content": "\tpublic static final String PKCS8_PRIVATE_RSA_KEY = EXAMPLE_SECRET_QUALIFIER + \"-----BEGIN PRIVATE KEY-----\\n\"",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "line": "140",
+    "pattern": "Asymmetric Private Key",
+    "confidence": "high"
+  },
+  {
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "confidence": "low",
+    "pattern": "private_key",
+    "match": "-----END PRIVATE KEY-----",
+    "content": "\t\t\t+ \"-----END PRIVATE KEY-----\\n\";",
+    "line": "166"
+  },
+  {
+    "content": "\tpublic static final String PKCS8_PRIVATE_EC_ED25519_KEY = EXAMPLE_SECRET_QUALIFIER + \"-----BEGIN PRIVATE KEY-----\\n\"",
+    "line": "168",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "pattern": "Asymmetric Private Key",
+    "confidence": "high",
+    "match": "-----BEGIN PRIVATE KEY-----"
+  },
+  {
+    "content": "\t\t\t+ \"MC4CAQAwBQYDK2VwBCIEIJOKNTaIJQTVuEqZ+yvclnjnlWJG6F+K+VsNCOlWRda+\\n\" + \"-----END PRIVATE KEY-----\";",
+    "pattern": "private_key",
+    "confidence": "low",
+    "file": "../organized/text/Java/00281c3b7847cab1ad2fe028a62dceeb",
+    "match": "-----END PRIVATE KEY-----",
+    "line": "169"
+  },
+  {
+    "pattern": "Generic - 1376",
+    "confidence": "high",
+    "match": "jdbc:mysql:",
+    "line": "27",
+    "content": "        String url = \"jdbc:mysql://a.b.c.d:3308/dragoon_v25_masterdb\";",
+    "file": "../organized/text/Java/54c84500f7f00bd25e05302ace3ceb01"
+  },
+  {
+    "line": "114",
+    "confidence": "high",
+    "pattern": "Graphcms - 1",
+    "match": "graph/attr.c\", name=\"agdatadict\", key=\"4bm10isw1qq1eqcse8afbxee3",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agdatadict\", key=\"4bm10isw1qq1eqcse8afbxee3\", definition=\"Agdatadict_t *agdatadict(Agraph_t * g, int cflag)\")"
+  },
+  {
+    "line": "133",
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "match": "graph/attr.c\", name=\"agdictof\", key=\"2b2cg0am9e1lwc0nqikl2wczb",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agdictof\", key=\"2b2cg0am9e1lwc0nqikl2wczb\", definition=\"Dict_t *agdictof(Agraph_t * g, int kind)\")"
+  },
+  {
+    "line": "168",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agnewsym\", key=\"dbhw2q2jfsz9qwawchy0hxj4i\", definition=\"Agsym_t *agnewsym(Agraph_t * g, char *name, char *value, int id, int kind)\")",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agnewsym\", key=\"dbhw2q2jfsz9qwawchy0hxj4i",
+    "pattern": "Graphcms - 1"
+  },
+  {
+    "line": "190",
+    "pattern": "Graphcms - 1",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agcopydict\", key=\"5s4tpjeh3jwf722izjq6cm6rq\", definition=\"static void agcopydict(Dict_t * src, Dict_t * dest, Agraph_t * g, int kind)\")",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agcopydict\", key=\"5s4tpjeh3jwf722izjq6cm6rq"
+  },
+  {
+    "match": "graph/attr.c\", name=\"agmakedatadict\", key=\"alb1d5x6huba3q44ms1wt0rr5",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "line": "200",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agmakedatadict\", key=\"alb1d5x6huba3q44ms1wt0rr5\", definition=\"static Agdatadict_t *agmakedatadict(Agraph_t * g)\")",
+    "pattern": "Graphcms - 1",
+    "confidence": "high"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "line": "236",
+    "match": "graph/attr.c\", name=\"agdictsym\", key=\"50wfzq5wy8wc7vuyvs3mrx5ct",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agdictsym\", key=\"50wfzq5wy8wc7vuyvs3mrx5ct\", definition=\"Agsym_t *agdictsym(Dict_t * dict, char *name)\")",
+    "confidence": "high"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "line": "251",
+    "match": "graph/attr.c\", name=\"aglocaldictsym\", key=\"4wy4ggu70d7harhix8xnh5w4l",
+    "confidence": "high",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"aglocaldictsym\", key=\"4wy4ggu70d7harhix8xnh5w4l\", definition=\"Agsym_t *aglocaldictsym(Dict_t * dict, char *name)\")"
+  },
+  {
+    "match": "graph/attr.c\", name=\"agattrsym\", key=\"8hy9sl3zmwobwm960jz466ufe",
+    "line": "269",
+    "pattern": "Graphcms - 1",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agattrsym\", key=\"8hy9sl3zmwobwm960jz466ufe\", definition=\"Agsym_t *agattrsym(void *obj, char *name)\")",
+    "confidence": "high",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f"
+  },
+  {
+    "line": "295",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"topdictsize\", key=\"6az8xu0sgu1d6abu0xfpd89hi\", definition=\"static int topdictsize(Agobj_t * obj)\")",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "pattern": "Graphcms - 1",
+    "match": "graph/attr.c\", name=\"topdictsize\", key=\"6az8xu0sgu1d6abu0xfpd89hi"
+  },
+  {
+    "line": "310",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agmakeattrs\", key=\"3wjrlyjdlz8k9nfxenxsfiqmj",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agmakeattrs\", key=\"3wjrlyjdlz8k9nfxenxsfiqmj\", definition=\"static Agrec_t *agmakeattrs(Agraph_t * context, void *obj)\")"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "line": "351",
+    "match": "graph/attr.c\", name=\"freesym\", key=\"6b3c2syvj23lbf7kz0aal8vmc",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"freesym\", key=\"6b3c2syvj23lbf7kz0aal8vmc\", definition=\"static void freesym(Dict_t * d, void * obj, Dtdisc_t * disc)\")",
+    "confidence": "high",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f"
+  },
+  {
+    "line": "376",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "match": "graph/attr.c\", name=\"agattrrec\", key=\"13sfx74lme08ur04vkrqta25j",
+    "confidence": "high",
+    "pattern": "Graphcms - 1",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agattrrec\", key=\"13sfx74lme08ur04vkrqta25j\", definition=\"Agattr_t *agattrrec(void *obj)\")"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"addattr\", key=\"2io7b26wq70e7kwdlzsh6bw7f\", definition=\"static void addattr(Agraph_t * g, Agobj_t * obj, Agsym_t * sym)\")",
+    "match": "graph/attr.c\", name=\"addattr\", key=\"2io7b26wq70e7kwdlzsh6bw7f",
+    "line": "394",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f"
+  },
+  {
+    "match": "graph/attr.c\", name=\"setattr\", key=\"a3qr8ug1rkxp6ocieyp41ly3o",
+    "confidence": "high",
+    "pattern": "Graphcms - 1",
+    "line": "417",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"setattr\", key=\"a3qr8ug1rkxp6ocieyp41ly3o\", definition=\"static Agsym_t *setattr(Agraph_t * g, int kind, char *name, char *value)\")",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "line": "478",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"getattr\", key=\"8f80aahwb8cqc2t9592v47ttd\", definition=\"static Agsym_t *getattr(Agraph_t * g, int kind, char *name)\")",
+    "match": "graph/attr.c\", name=\"getattr\", key=\"8f80aahwb8cqc2t9592v47ttd",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f"
+  },
+  {
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "line": "496",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agattr\", key=\"blr3drm2hxuzwd6gpeeb84yyg\", definition=\"Agsym_t *agattr(Agraph_t * g, int kind, char *name, char *value)\")",
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agattr\", key=\"blr3drm2hxuzwd6gpeeb84yyg"
+  },
+  {
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agraphattr_init\", key=\"ex2qtmuwz0o2e5svkujdbux78\", definition=\"void agraphattr_init(Agraph_t * g)\")",
+    "match": "graph/attr.c\", name=\"agraphattr_init\", key=\"ex2qtmuwz0o2e5svkujdbux78",
+    "line": "518",
+    "pattern": "Graphcms - 1"
+  },
+  {
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "line": "538",
+    "pattern": "Graphcms - 1",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agnodeattr_init\", key=\"2pp4ot3pqy71jpfvu3g398y4y\", definition=\"void agnodeattr_init(Agraph_t * g, Agnode_t * n)\")",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agnodeattr_init\", key=\"2pp4ot3pqy71jpfvu3g398y4y"
+  },
+  {
+    "match": "graph/attr.c\", name=\"agedgeattr_init\", key=\"ckfzmnxfi0jiiayxmq38giw0r",
+    "pattern": "Graphcms - 1",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agedgeattr_init\", key=\"ckfzmnxfi0jiiayxmq38giw0r\", definition=\"void agedgeattr_init(Agraph_t * g, Agedge_t * e)\")",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "line": "555",
+    "confidence": "high"
+  },
+  {
+    "match": "graph/attr.c\", name=\"agget\", key=\"eydjyhexv5jr6vi7uhk0cgphv",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agget\", key=\"eydjyhexv5jr6vi7uhk0cgphv\", definition=\"char *agget(void *obj, char *name)\")",
+    "line": "571"
+  },
+  {
+    "line": "595",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agxget\", key=\"9h5oymhfkp6k34zl0fonn10k9\", definition=\"char *agxget(void *obj, Agsym_t * sym)\")",
+    "match": "graph/attr.c\", name=\"agxget\", key=\"9h5oymhfkp6k34zl0fonn10k9",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "pattern": "Graphcms - 1"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "confidence": "high",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agxset\", key=\"4q8xvstvl6fbijhucfd1endxc\", definition=\"int agxset(void *obj, Agsym_t * sym, char *value)\")",
+    "line": "613",
+    "match": "graph/attr.c\", name=\"agxset\", key=\"4q8xvstvl6fbijhucfd1endxc"
+  },
+  {
+    "pattern": "Graphcms - 1",
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"agsafeset\", key=\"9b7vn95cin8o7mb2f21exh1qr\", definition=\"int agsafeset(void *obj, char *name, char *value, char *def)\")",
+    "line": "649",
+    "confidence": "high",
+    "match": "graph/attr.c\", name=\"agsafeset\", key=\"9b7vn95cin8o7mb2f21exh1qr"
+  },
+  {
+    "file": "../organized/text/Java/4b291ad4680d373e2c6bfd392084a35f",
+    "confidence": "high",
+    "pattern": "Graphcms - 1",
+    "line": "669",
+    "match": "graph/attr.c\", name=\"init_all_attrs\", key=\"6gjlgo4s6r0bu7gjazfee6qv8",
+    "content": "@Original(version=\"2.38.0\", path=\"lib/cgraph/attr.c\", name=\"init_all_attrs\", key=\"6gjlgo4s6r0bu7gjazfee6qv8\", definition=\"static void init_all_attrs(Agraph_t * g)\")"
+  },
+  {
+    "match": "jdbc:mysql:",
+    "line": "10",
+    "pattern": "Generic - 1376",
+    "confidence": "high",
+    "file": "../organized/text/Java/a80fc97dfd54711468fd605ce7dd16c0",
+    "content": "\tprivate static String url = \"jdbc:mysql://localhost:8066/test?useServerPrepStmts=true\"; // 使用服务端预处理"
+  },
+  {
+    "confidence": "high",
+    "content": "        jdbcUrl = \"jdbc:mysql://hbase-01:3306/sonar\";",
+    "pattern": "Generic - 1376",
+    "match": "jdbc:mysql:",
+    "line": "38",
+    "file": "../organized/text/Java/1decc4aa44d303ec3018968213e819c8"
+  }
+]

@@ -1,17 +1,17 @@
 use clap::Parser;
 use colored::*;
+use fancy_regex::Regex;
 use ignore::WalkBuilder;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 
+use memmap2::Mmap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use memmap2::Mmap;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -21,7 +21,7 @@ struct Args {
     path: PathBuf,
 
     /// Pattern database file
-    #[arg(short, long, default_value = "secrets-patterns-db/db/rules-stable.yml")]
+    #[arg(short, long, default_value = "rules/rules-stable.yml")]
     database: PathBuf,
 
     /// Only show high confidence matches
@@ -87,11 +87,15 @@ struct CompiledPatterns {
     confidences: Vec<String>,
 }
 
-fn load_patterns(database_path: &Path, high_confidence_only: bool) -> Result<CompiledPatterns, Box<dyn std::error::Error>> {
+fn load_patterns(
+    database_path: &Path,
+    high_confidence_only: bool,
+) -> Result<CompiledPatterns, Box<dyn std::error::Error>> {
     let file = File::open(database_path)?;
     let db: PatternDatabase = serde_yaml::from_reader(file)?;
 
-    let pattern_entries: Vec<_> = db.patterns
+    let pattern_entries: Vec<_> = db
+        .patterns
         .into_iter()
         .filter(|entry| !high_confidence_only || entry.pattern.confidence == "high")
         .collect();
@@ -107,7 +111,12 @@ fn load_patterns(database_path: &Path, high_confidence_only: bool) -> Result<Com
             match Regex::new(&pattern.regex) {
                 Ok(regex) => Some((idx, pattern.name.clone(), regex, pattern.confidence.clone())),
                 Err(e) => {
-                    eprintln!("{} Failed to compile pattern '{}': {}", "WARNING:".yellow(), pattern.name, e);
+                    eprintln!(
+                        "{} Failed to compile pattern '{}': {}",
+                        "WARNING:".yellow(),
+                        pattern.name,
+                        e
+                    );
                     None
                 }
             }
@@ -128,8 +137,9 @@ fn load_patterns(database_path: &Path, high_confidence_only: bool) -> Result<Com
         confidences.push(confidence);
     }
 
-    println!("{} Loaded {} patterns ({} compiled, {} skipped)", 
-        "INFO:".blue(), 
+    println!(
+        "{} Loaded {} patterns ({} compiled, {} skipped)",
+        "INFO:".blue(),
         pattern_entries.len(),
         regexes.len(),
         pattern_entries.len() - regexes.len()
@@ -145,17 +155,17 @@ fn load_patterns(database_path: &Path, high_confidence_only: bool) -> Result<Com
 fn should_scan_file(file_path: &Path, include_ext: &[String], exclude_ext: &[String]) -> bool {
     if let Some(extension) = file_path.extension() {
         let ext = extension.to_string_lossy().to_lowercase();
-        
+
         // Check exclude list first
         if !exclude_ext.is_empty() && exclude_ext.contains(&ext) {
             return false;
         }
-        
+
         // Check include list
         if !include_ext.is_empty() && !include_ext.contains(&ext) {
             return false;
         }
-        
+
         true
     } else {
         // Files without extensions are always scanned unless explicitly excluded
@@ -185,13 +195,19 @@ fn scan_file(
     let file = File::open(file_path)?;
     let mmap = unsafe { Mmap::map(&file)? };
     let content = std::str::from_utf8(&mmap)?;
-    
+
     let lines: Vec<&str> = content.lines().collect();
     let mut matches = Vec::new();
 
     // Update current file progress (lazy update)
     if let Some(pb) = current_file_pb {
-        pb.set_message(file_path.file_name().unwrap_or_default().to_string_lossy().to_string());
+        pb.set_message(
+            file_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+        );
     }
 
     // Process lines in parallel chunks for large files
@@ -203,15 +219,15 @@ fn scan_file(
             .par_bridge()
             .map(|(chunk_idx, chunk)| {
                 let mut chunk_matches = Vec::new();
-                
+
                 for (local_line_idx, line) in chunk.iter().enumerate() {
                     let line_number = chunk_idx * chunk_size + local_line_idx + 1;
                     let mut found_high_confidence = false;
-                    
+
                     // Check high confidence patterns first
                     for (pattern_idx, regex) in patterns.individual_regexes.iter().enumerate() {
                         if patterns.confidences[pattern_idx] == "high" {
-                            if let Some(captures) = regex.captures(line) {
+                            if let Ok(Some(captures)) = regex.captures(line) {
                                 if let Some(matched_text) = captures.get(0) {
                                     chunk_matches.push(MatchResult {
                                         file_path: file_path.to_path_buf(),
@@ -227,12 +243,12 @@ fn scan_file(
                             }
                         }
                     }
-                    
+
                     // If no high confidence match found, check low confidence patterns
                     if !found_high_confidence {
                         for (pattern_idx, regex) in patterns.individual_regexes.iter().enumerate() {
                             if patterns.confidences[pattern_idx] == "low" {
-                                if let Some(captures) = regex.captures(line) {
+                                if let Ok(Some(captures)) = regex.captures(line) {
                                     if let Some(matched_text) = captures.get(0) {
                                         chunk_matches.push(MatchResult {
                                             file_path: file_path.to_path_buf(),
@@ -248,7 +264,7 @@ fn scan_file(
                         }
                     }
                 }
-                
+
                 chunk_matches
             })
             .collect();
@@ -261,20 +277,20 @@ fn scan_file(
         // For small files, use sequential processing
         for (line_number, line) in lines.iter().enumerate() {
             let line_number = line_number + 1;
-            
+
             // Update current pattern progress (lazy update - only every 100 lines)
             if let Some(pb) = current_pattern_pb {
                 if line_number % 100 == 0 {
                     pb.set_message(format!("Line {}/{}", line_number, lines.len()));
                 }
             }
-            
+
             let mut found_high_confidence = false;
-            
+
             // Check high confidence patterns first
             for (pattern_idx, regex) in patterns.individual_regexes.iter().enumerate() {
                 if patterns.confidences[pattern_idx] == "high" {
-                    if let Some(captures) = regex.captures(line) {
+                    if let Ok(Some(captures)) = regex.captures(line) {
                         if let Some(matched_text) = captures.get(0) {
                             matches.push(MatchResult {
                                 file_path: file_path.to_path_buf(),
@@ -290,12 +306,12 @@ fn scan_file(
                     }
                 }
             }
-            
+
             // If no high confidence match found, check low confidence patterns
             if !found_high_confidence {
                 for (pattern_idx, regex) in patterns.individual_regexes.iter().enumerate() {
                     if patterns.confidences[pattern_idx] == "low" {
-                        if let Some(captures) = regex.captures(line) {
+                        if let Ok(Some(captures)) = regex.captures(line) {
                             if let Some(matched_text) = captures.get(0) {
                                 matches.push(MatchResult {
                                     file_path: file_path.to_path_buf(),
@@ -318,7 +334,8 @@ fn scan_file(
 
 fn print_simple_results(results: &[MatchResult]) {
     for result in results {
-        println!("{}:{} {} [{}]", 
+        println!(
+            "{}:{} {} [{}]",
             result.file_path.display(),
             result.line_number,
             result.pattern_name,
@@ -335,13 +352,18 @@ fn print_detailed_results(results: &[MatchResult]) {
             _ => "white",
         };
 
-        println!("\n{} {}:{} {}", 
+        println!(
+            "\n{} {}:{} {}",
             "→".cyan(),
             result.file_path.display().to_string().bold(),
             result.line_number.to_string().bold(),
             result.pattern_name.bold()
         );
-        println!("  {}: {}", "Confidence".dimmed(), result.confidence.color(confidence_color));
+        println!(
+            "  {}: {}",
+            "Confidence".dimmed(),
+            result.confidence.color(confidence_color)
+        );
         println!("  {}: {}", "Match".dimmed(), result.matched_text.red());
         println!("  {}: {}", "Line".dimmed(), result.line_content.trim());
     }
@@ -368,7 +390,10 @@ fn print_json_results(results: &[MatchResult]) {
     }
 }
 
-fn write_json_results_to_file(results: &[MatchResult], output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn write_json_results_to_file(
+    results: &[MatchResult],
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let json_results: Vec<HashMap<&str, String>> = results
         .iter()
         .map(|r| {
@@ -390,9 +415,13 @@ fn write_json_results_to_file(results: &[MatchResult], output_path: &Path) -> Re
 
     let file = File::create(output_path)?;
     serde_json::to_writer_pretty(file, &json_results)?;
-    
-    println!("{} Results written to: {}", "INFO:".blue(), output_path.display());
-    
+
+    println!(
+        "{} Results written to: {}",
+        "INFO:".blue(),
+        output_path.display()
+    );
+
     Ok(())
 }
 
@@ -401,20 +430,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_time = Instant::now();
 
     // Parse file extension filters
-    let include_ext: Vec<String> = args.include_ext
+    let include_ext: Vec<String> = args
+        .include_ext
         .split(',')
         .filter(|s| !s.is_empty())
         .map(|s| s.trim().to_lowercase())
         .collect();
 
-    let exclude_ext: Vec<String> = args.exclude_ext
+    let exclude_ext: Vec<String> = args
+        .exclude_ext
         .split(',')
         .filter(|s| !s.is_empty())
         .map(|s| s.trim().to_lowercase())
         .collect();
 
-    println!("{} Scanning directory: {}", "INFO:".blue(), args.path.display());
-    println!("{} Using pattern database: {}", "INFO:".blue(), args.database.display());
+    println!(
+        "{} Scanning directory: {}",
+        "INFO:".blue(),
+        args.path.display()
+    );
+    println!(
+        "{} Using pattern database: {}",
+        "INFO:".blue(),
+        args.database.display()
+    );
 
     // Load patterns
     let pattern_load_start = Instant::now();
@@ -422,7 +461,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pattern_load_time = pattern_load_start.elapsed();
 
     if patterns.individual_regexes.is_empty() {
-        eprintln!("{} No patterns loaded. Check your database file.", "ERROR:".red());
+        eprintln!(
+            "{} No patterns loaded. Check your database file.",
+            "ERROR:".red()
+        );
         return Ok(());
     }
 
@@ -443,14 +485,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         user_batch
     } else {
         match total_files {
-            0..=1000 => 100,           // Small directories: process all at once
-            1001..=10000 => 500,       // Medium directories: medium batches
-            10001..=100000 => 1000,    // Large directories: larger batches
-            _ => 2000,                 // Very large directories: largest batches
+            0..=1000 => 100,        // Small directories: process all at once
+            1001..=10000 => 500,    // Medium directories: medium batches
+            10001..=100000 => 1000, // Large directories: larger batches
+            _ => 2000,              // Very large directories: largest batches
         }
     };
 
-    println!("{} Using batch size: {} files per batch", "INFO:".blue(), batch_size);
+    println!(
+        "{} Using batch size: {} files per batch",
+        "INFO:".blue(),
+        batch_size
+    );
 
     let scanned_files = files_to_scan.len();
     println!("{} Found {} files to scan", "INFO:".blue(), scanned_files);
@@ -460,7 +506,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create multi-progress display for three-line status
     let multi_progress = MultiProgress::new();
-    
+
     // Line 1: Overall progress bar
     let overall_pb = ProgressBar::new(total_files as u64);
     overall_pb.set_style(
@@ -476,7 +522,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     current_file_pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.yellow} Current file: {msg}")
-            .unwrap()
+            .unwrap(),
     );
     current_file_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     let current_file_pb = multi_progress.add(current_file_pb);
@@ -486,7 +532,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     current_pattern_pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.blue} Current pattern: {msg}")
-            .unwrap()
+            .unwrap(),
     );
     current_pattern_pb.enable_steady_tick(std::time::Duration::from_millis(100));
     let current_pattern_pb = multi_progress.add(current_pattern_pb);
@@ -499,14 +545,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|file_path| {
             overall_pb.inc(1);
             scan_file(
-                file_path, 
-                &patterns_arc, 
-                &include_ext, 
-                &exclude_ext, 
+                file_path,
+                &patterns_arc,
+                &include_ext,
+                &exclude_ext,
                 args.max_file_size,
                 Some(&current_file_pb),
-                Some(&current_pattern_pb)
-            ).ok()
+                Some(&current_pattern_pb),
+            )
+            .ok()
         })
         .flatten()
         .collect();
@@ -518,15 +565,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let scan_time = start_time.elapsed();
     let files_per_second = scanned_files as f64 / scan_time.as_secs_f64();
-    
-    println!("\n{} Scanned {} files, found {} matches", 
+
+    println!(
+        "\n{} Scanned {} files, found {} matches",
         "SUMMARY:".green(),
         scanned_files,
         all_matches.len()
     );
-    println!("{} Pattern loading: {:.2?}", "PERF:".cyan(), pattern_load_time);
+    println!(
+        "{} Pattern loading: {:.2?}",
+        "PERF:".cyan(),
+        pattern_load_time
+    );
     println!("{} Total scan time: {:.2?}", "PERF:".cyan(), scan_time);
-    println!("{} Files per second: {:.1}", "PERF:".cyan(), files_per_second);
+    println!(
+        "{} Files per second: {:.1}",
+        "PERF:".cyan(),
+        files_per_second
+    );
 
     // Output results
     match args.format.as_str() {
