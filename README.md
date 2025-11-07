@@ -12,7 +12,7 @@ RipGitleak 是一个高性能的密钥泄露检测工具，利用 Rust 的 `fanc
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/RipGitleak.git
+git clone https://github.com/KeyFuzzer/RipGitleak.git
 cd RipGitleak
 
 # 构建项目

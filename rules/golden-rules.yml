@@ -1,0 +1,521 @@
+patterns:
+- pattern:
+    confidence: high
+    name: AWS Access Key ID
+    regex: 'AKIA[0-9A-Z]{16}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: AWS Secret Access Key
+    regex: '(?i)aws(.{0,20})?(?-i)[''\""][0-9a-zA-Z\/+]{40}[''\""]'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Google API Key
+    regex: 'AIza[0-9A-Za-z\-_]{35}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Firebase Secret
+    regex: 'AAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: GitHub Token
+    regex: 'ghp_[0-9a-zA-Z]{36}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: GitLab Token
+    regex: 'glpat-[0-9a-zA-Z-_]{20}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Slack Token
+    regex: 'xox[baprs]-([0-9a-zA-Z]{10,48})?'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Stripe Secret Key
+    regex: 'sk_live_[0-9a-zA-Z]{24}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Stripe Publishable Key
+    regex: 'pk_live_[0-9a-zA-Z]{24}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Twilio API Key
+    regex: 'SK[0-9a-fA-F]{32}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: SendGrid API Key
+    regex: 'SG\.[\w\d\-_]{22}\.[\w\d\-_]{43}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Mailgun API Key
+    regex: 'key-[0-9a-zA-Z]{32}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Dropbox Access Token
+    regex: 'sl\.[A-Za-z0-9_-]{20,100}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Shopify Access Token
+    regex: 'shpat_[0-9a-fA-F]{32}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Facebook Access Token
+    regex: 'EAACEdEose0cBA[0-9A-Za-z]+'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Heroku API Key
+    regex: '[hH]eroku[''\""][0-9a-f]{32}[''\""]'
+    integrity: full
+- pattern:
+    confidence: high
+    name: DigitalOcean Token
+    regex: 'dop_v1_[a-z0-9]{64}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Linear API Key
+    regex: 'lin_api_[a-zA-Z0-9]{40}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Telegram Bot Token
+    regex: '\d{9}:[a-zA-Z0-9_-]{35}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: OAuth Client Secret
+    regex: '(?i)client_secret[''\""\s:=]+[a-zA-Z0-9\-_.~]{10,100}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: OAuth Client ID
+    regex: '(?i)client_id[''\""\s:=]+[a-zA-Z0-9\-_.~]{10,100}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: JWT Token
+    regex: 'eyJ[A-Za-z0-9-_=]+?\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Azure Client Secret
+    regex: '(?i)azure(.{0,20})?client\.secret(.{0,20})?[''\""][a-zA-Z0-9._%+-]{32,}[''\""]'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Microsoft Teams Webhook
+    regex: 'https:\/\/[a-z]+\.webhook\.office\.com\/webhookb2\/[a-zA-Z0-9@\-]+\/.*'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Basic Auth String
+    regex: '(?i)(username|user|email)[''\""\s:=]+[^\s''"@]{1,100}[''\""].*?(password|pwd)[''\""\s:=]+[^\s''\""]{4,100}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Password Assignment (non-JSON formats)
+    regex: '(?i)(password|pwd|pass)[''"\\s:=]+([^\s''"=]{4,100})'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Password Assignment (JSON key/value)
+    regex: '(?i)"(password|pwd|pass)"\\s*:\\s*"((?:[^"\\\\]|\\\\.){4,100})"'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: API Key in Variable
+    regex: '(?i)(api[_-]?key)[''\""\s:=]+[a-zA-Z0-9\-_.]{8,100}'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Secret in Variable
+    regex: '(?i)(secret|token)[''\""\s:=]+[a-zA-Z0-9\-_.]{8,100}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Authorization Bearer Token
+    regex: 'Bearer\s+[a-zA-Z0-9\-._~+/]+=*'
+    integrity: part
+- pattern:
+    confidence: high
+    name: MongoDB Connection URI
+    regex: 'mongodb(\+srv)?:\/\/[^\s''""]+'
+    integrity: full
+- pattern:
+    confidence: high
+    name: PostgreSQL URI
+    regex: 'postgres(?:ql)?:\/\/[^\s''""]+'
+    integrity: full
+- pattern:
+    confidence: high
+    name: MySQL URI
+    regex: 'mysql:\/\/[^\s''""]+'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Redis URI
+    regex: 'redis:\/\/[^\s''""]+'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Elasticsearch URI
+    regex: 'elasticsearch:\/\/[^\s''""]+'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Supabase DB Key (Project Ref URL)
+    regex: 'supabase\.co\/[a-z0-9]{15,}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Firebase URL
+    regex: 'https:\/\/[a-z0-9-]+\.firebaseio\.com'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: JDBC URL
+    regex: 'jdbc:\w+:\/\/[^\s''""]+'
+    integrity: part
+- pattern:
+    confidence: high
+    name: AWS RDS Hostname
+    regex: '[a-z0-9-]+\.rds\.amazonaws\.com'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Cloud SQL URI (GCP)
+    regex: 'googleapis\.com\/sql\/v1beta4\/projects\/'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Algolia API Key
+    regex: '(?i)(algolia|application)_?key[''\""\s:=]+[a-zA-Z0-9]{10,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Firebase API Key in Config
+    regex: 'firebaseConfig\s*=\s*{[^}]*apiKey\s*:\s*[''\""][^''\""]+[''\""]'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Cloudinary URL
+    regex: 'cloudinary:\/\/[0-9]{15}:[a-zA-Z0-9]+@[a-zA-Z]+'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Sentry DSN
+    regex: 'https:\/\/[a-zA-Z0-9]+@[a-z]+\.ingest\.sentry\.io\/\d+'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Netlify Token
+    regex: 'netlifyAuthToken\s*=\s*[''\""][a-z0-9]{40}[''\""]'
+    integrity: full
+- pattern:
+    confidence: low
+    name: GitHub OAuth App Secret (Hex-40)
+    regex: '[a-f0-9]{40}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Segment API Key
+    regex: '(?i)segment(.{0,20})?key[''\""\s:=]+[a-zA-Z0-9]{10,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Intercom Access Token
+    regex: '(?i)intercom(.{0,20})?token[''\""\s:=]+[a-zA-Z0-9-_]{20,}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Amplitude API Key
+    regex: 'apiKey[''\""]?\s*:\s*[''\""][a-z0-9\-]{32,64}[''\""]'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Plaid Client Secret
+    regex: 'plaid(.{0,20})?(client)?secret[''\""\s:=]+[a-z0-9-_]{30,}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Docker Hub Password
+    regex: '(?i)docker(.{0,20})?password[''\""\s:=]+[^\s''\""]{8,}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: AWS IAM Role ARN
+    regex: 'arn:aws:iam::[0-9]{12}:role\/[A-Za-z0-9_+=,.@\-_/]+'
+    integrity: part
+- pattern:
+    confidence: high
+    name: AWS S3 Bucket URL
+    regex: 's3:\/\/[a-z0-9\-\.]{3,63}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Kubernetes Secret Name
+    regex: '(?i)secretName:\s*[''\""]?[a-z0-9\-]+[''\""]?'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Helm Secret Value
+    regex: '(?i)secret\s*:\s*[''\""][^''\""]+[''\""]'
+    integrity: part
+- pattern:
+    confidence: high
+    name: GitHub Actions Secret Reference
+    regex: 'secrets\.[A-Z0-9_]+'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: GitHub Actions Encrypted Value
+    regex: 'encrypted_value:\s*[''\""][a-zA-Z0-9+/=]{10,}[''\""]'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Kubernetes Service Account Token (JWT Prefix)
+    regex: 'eyJhbGciOiJSUzI1NiIsImtpZCI6'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Vault Token
+    regex: 's\.[a-zA-Z0-9]{8,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: HashiCorp Vault URL
+    regex: 'https:\/\/vault\.[a-z0-9\-_\.]+\.com'
+    integrity: part
+- pattern:
+    confidence: high
+    name: CircleCI Token
+    regex: 'circle-token=[a-z0-9]{40}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Travis CI Token
+    regex: '(?i)travis(.{0,20})?token[''\""\s:=]+[a-z0-9]{30,}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Jenkins Crumb Token
+    regex: 'Jenkins-Crumb:\s*[a-z0-9]{30,}'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Azure DevOps Token (52 chars)
+    regex: '[a-z0-9]{52}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: GitHub Personal Access Token
+    regex: 'ghp_[a-zA-Z0-9]{36}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: GitHub Fine-Grained Token
+    regex: 'github_pat_[0-9a-zA-Z_]{20,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Bitbucket OAuth Key
+    regex: 'bitbucket(.{0,20})?key[''\""\s:=]+[a-zA-Z0-9]{20,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Bitbucket OAuth Secret
+    regex: 'bitbucket(.{0,20})?secret[''\""\s:=]+[a-zA-Z0-9]{20,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: GitLab Runner Token
+    regex: 'glrt-[a-zA-Z0-9_-]{20}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Netlify Access Token
+    regex: 'netlifyAuthToken\s*=\s*[''\""][a-z0-9]{40}[''\""]'
+    integrity: full
+- pattern:
+    confidence: low
+    name: Bugsnag API Key (Hex-32)
+    regex: '[a-f0-9]{32}'
+    integrity: part
+- pattern:
+    confidence: low
+    name: Datadog API Key (32)
+    regex: '[a-z0-9]{32}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Loggly Token
+    regex: '[a-z0-9]{30}-[a-z0-9]{10}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: New Relic Key
+    regex: 'NRII-[a-zA-Z0-9]{20,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Mixpanel Token
+    regex: '(?i)mixpanel(.{0,20})?token[''\""\s:=]+[a-z0-9]{32}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Heap Analytics App ID
+    regex: 'heapSettings\.appId\s*=\s*[''\""][a-z0-9]{8,12}[''\""]'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Keen IO Project ID
+    regex: 'projectId[''\""]?\s*:\s*[''\""][a-f0-9]{24}[''\""]'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Keen IO Write Key
+    regex: 'writeKey[''\""]?\s*:\s*[''\""][a-zA-Z0-9]{64}[''\""]'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Snyk Token
+    regex: 'snyk_token\s*=\s*[a-f0-9\-]{36}'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Rollbar Access Token
+    regex: 'access_token[''\""]?\s*:\s*[''\""][a-z0-9]{32}[''\""]'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Twitch API Key
+    regex: '(?i)twitch(.{0,20})?key[''\""\s:=]+[a-zA-Z0-9]{20,}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Discord Bot Token
+    regex: '[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Discord Webhook URL
+    regex: 'https:\/\/discord(?:app)?\.com\/api\/webhooks\/[0-9]+\/[a-zA-Z0-9_-]+'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Steam Web API Key
+    regex: '(?i)steam(.{0,20})?key[''\""\s:=]+[a-zA-Z0-9]{32}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Riot Games API Key
+    regex: 'RGAPI-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+    integrity: full
+- pattern:
+    confidence: high
+    name: Private IP (Internal)
+    regex: '\b(10\.\d{1,3}|\b192\.168|\b172\.(1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Localhost Reference
+    regex: 'localhost:[0-9]{2,5}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Dev/Stage URL
+    regex: '(dev|staging|test)\.[a-z0-9.-]+\.(com|net|io)'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Internal Subdomain URL
+    regex: 'https?:\/\/[a-z0-9.-]+\.internal\.[a-z]{2,}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Preprod URLs
+    regex: 'https:\/\/preprod\.[a-z0-9-]+\.[a-z]{2,}'
+    integrity: part
+- pattern:
+    confidence: high
+    name: Private Key Block
+    regex: '-----BEGIN (RSA|DSA|EC|OPENSSH)? PRIVATE KEY-----'
+    integrity: part
+- pattern:
+    confidence: high
+    name: PEM File Content
+    regex: '-----BEGIN CERTIFICATE-----'
+    integrity: part
+- pattern:
+    confidence: high
+    name: PGP Private Key Block
+    regex: '-----BEGIN PGP PRIVATE KEY BLOCK-----'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Base64 High Entropy String
+    regex: '[''\""][A-Za-z0-9+\/]{40,}={0,2}[''\""]'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: API Key Generic Detector (non-JSON formats)
+    regex: '(?i)\b(apikey|api_key|secret|token)\b[''"\s:=]+([A-Za-z0-9._-]{8,})'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: API Key Generic Detector (JSON key/value)
+    regex: '(?i)"(apikey|api_key|secret|token)"\\s*:\\s*"([A-Za-z0-9\-._]{8,})"'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Bearer Token Generic (header/non-JSON)
+    regex: '(?i)authorization\\s*:\\s*Bearer\\s+([A-Za-z0-9\-._~+/]+=*)'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Bearer Token Generic (JSON key/value)
+    regex: '(?i)"authorization"\\s*:\\s*"Bearer\\s+([A-Za-z0-9\-._~+/]+=*)"'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Session ID (non-JSON formats)
+    regex: '(?i)(sessionid|session_id)\b[''"\s:=]+([A-Za-z0-9]{10,})'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Session ID (JSON key/value)
+    regex: '(?i)"(sessionid|session_id)"\\s*:\\s*"([A-Za-z0-9]{10,})"'
+    integrity: full
+- pattern:
+    confidence: medium
+    name: Cookie Name Generic (header/non-JSON)
+    regex: '(?i)set-cookie\\s*:\\s*([A-Za-z0-9_-]+)='
+    integrity: part
+- pattern:
+    confidence: medium
+    name: Cookie Name Generic (JSON key/value)
+    regex: '(?i)"set-cookie"\\s*:\\s*"([A-Za-z0-9_-]+)='
+    integrity: part
+- pattern:
+    confidence: medium
+    name: CSRF Token
+    regex: '(?i)csrf(token)?[''\""\s:=]+[a-zA-Z0-9-_]{8,}'
+    integrity: part
+- pattern:
+    confidence: medium
+    name: JWT in Local Storage
+    regex: 'localStorage\.setItem\([''\""]token[''\""],\s*[''\""]eyJ[a-zA-Z0-9-_]+\.[a-zA-Z0-9-_]+\.[a-zA-Z0-9-_]+[''\""]\)'
+    integrity: part

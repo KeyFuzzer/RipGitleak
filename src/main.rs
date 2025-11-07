@@ -1,10 +1,11 @@
+use aho_corasick::{AhoCorasick, MatchKind};
 use clap::Parser;
 use colored::*;
 use fancy_regex::Regex;
 use ignore::WalkBuilder;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 
@@ -17,11 +18,11 @@ use std::time::Instant;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Directory to scan
-    #[arg(short, long, default_value = ".")]
+    #[arg(short, long)]
     path: PathBuf,
 
     /// Pattern database file
-    #[arg(short, long, default_value = "rules/rules-stable.yml")]
+    #[arg(short, long, default_value = "rules/golden-rules.yml")]
     database: PathBuf,
 
     /// Only show high confidence matches
@@ -51,6 +52,18 @@ struct Args {
     /// Output directory for JSON results
     #[arg(short = 'o', long)]
     output_dir: Option<PathBuf>,
+
+    /// Output matches in token format
+    #[arg(short = 't', long)]
+    token_format: bool,
+
+    /// Only match and output rules with full integrity
+    #[arg(short = 'I', long)]
+    full_integrity_only: bool,
+
+    /// Maximum line length to scan (skip lines longer than this)
+    #[arg(short = 'L', long, default_value = "1000")]
+    max_line_length: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +71,7 @@ struct Pattern {
     name: String,
     regex: String,
     confidence: String,
+    integrity: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,16 +94,153 @@ struct MatchResult {
     line_content: String,
 }
 
+#[derive(Debug, Serialize)]
+struct TokenMatch {
+    file_hash: String,
+    value: String,
+}
+
 #[derive(Debug)]
 struct CompiledPatterns {
     individual_regexes: Vec<Regex>,
     names: Vec<String>,
     confidences: Vec<String>,
+    // Layered prefiltering for better performance
+    fast_prefilter: AhoCorasick, // High-confidence keywords only
+    full_prefilter: AhoCorasick, // All keywords
+}
+
+fn extract_tiered_keywords(pattern_entries: &[PatternEntry]) -> (Vec<String>, Vec<String>) {
+    let mut fast_keywords = std::collections::HashSet::new();
+    let mut full_keywords = std::collections::HashSet::new();
+
+    // Fast filter: only most common/high-value keywords
+    let fast_keyword_set = vec![
+        "key", "password", "token", "secret", "api", "akia", "ghp_", "sk-", "auth",
+    ];
+
+    // Full filter: comprehensive keyword list
+    let full_keyword_set = vec![
+        "key",
+        "password",
+        "token",
+        "secret",
+        "api",
+        "auth",
+        "credential",
+        "private",
+        "access",
+        "session",
+        "jwt",
+        "bearer",
+        "oauth",
+        "cert",
+        "hash",
+        "sign",
+        "encrypt",
+        "akia",
+        "asia",
+        "ghp_",
+        "sk-",
+        "github",
+        "aws",
+        "passwd",
+        "pwd",
+        "cred",
+        "database",
+        "db",
+        "sql",
+        "ssh",
+        "ssl",
+        "tls",
+        "guid",
+        "uuid",
+    ];
+
+    for keyword in fast_keyword_set {
+        fast_keywords.insert(keyword.to_string());
+        full_keywords.insert(keyword.to_string());
+    }
+
+    for keyword in full_keyword_set {
+        full_keywords.insert(keyword.to_string());
+    }
+
+    // Extract from patterns
+    for entry in pattern_entries {
+        let pattern = &entry.pattern;
+
+        // Extract from pattern name
+        let name_lower = pattern.name.to_lowercase();
+        let name_words: Vec<&str> = name_lower.split_whitespace().collect();
+        for word in name_words {
+            if word.len() >= 3 && word.len() <= 15 {
+                full_keywords.insert(word.to_string());
+
+                // Add to fast filter if it's a high-value keyword
+                if word == "key"
+                    || word == "password"
+                    || word == "token"
+                    || word == "secret"
+                    || word == "api"
+                    || word == "auth"
+                {
+                    fast_keywords.insert(word.to_string());
+                }
+            }
+        }
+
+        // Extract from regex (only important patterns)
+        let regex_lower = pattern.regex.to_lowercase();
+
+        // Fast filter keywords
+        if regex_lower.contains("akia") {
+            fast_keywords.insert("akia".to_string());
+            full_keywords.insert("akia".to_string());
+        }
+        if regex_lower.contains("ghp_") {
+            fast_keywords.insert("ghp_".to_string());
+            full_keywords.insert("ghp_".to_string());
+        }
+        if regex_lower.contains("sk-") {
+            fast_keywords.insert("sk-".to_string());
+            full_keywords.insert("sk-".to_string());
+        }
+
+        // Full filter only
+        if regex_lower.contains("token") {
+            full_keywords.insert("token".to_string());
+        }
+        if regex_lower.contains("password") {
+            full_keywords.insert("password".to_string());
+        }
+        if regex_lower.contains("secret") {
+            full_keywords.insert("secret".to_string());
+        }
+        if regex_lower.contains("key") && !regex_lower.contains("akia") {
+            full_keywords.insert("key".to_string());
+        }
+    }
+
+    let mut fast_list: Vec<String> = fast_keywords.into_iter().collect();
+    let mut full_list: Vec<String> = full_keywords.into_iter().collect();
+    fast_list.sort();
+    full_list.sort();
+
+    println!(
+        "{} Tiered keywords: {} fast, {} full",
+        "INFO:".blue(),
+        fast_list.len(),
+        full_list.len()
+    );
+
+    (fast_list, full_list)
 }
 
 fn load_patterns(
     database_path: &Path,
     high_confidence_only: bool,
+    full_integrity_only: bool,
 ) -> Result<CompiledPatterns, Box<dyn std::error::Error>> {
     let file = File::open(database_path)?;
     let db: PatternDatabase = serde_yaml::from_reader(file)?;
@@ -98,9 +249,23 @@ fn load_patterns(
         .patterns
         .into_iter()
         .filter(|entry| !high_confidence_only || entry.pattern.confidence == "high")
+        .filter(|entry| !full_integrity_only || entry.pattern.integrity == "full")
         .collect();
 
-    // Skip RegexSet since it can be too large for many patterns
+    // Extract tiered keywords for optimized prefiltering
+    let (fast_keywords, full_keywords) = extract_tiered_keywords(&pattern_entries);
+
+    // Build fast prefilter (high-confidence keywords only)
+    let fast_prefilter = AhoCorasick::builder()
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&fast_keywords)
+        .map_err(|e| format!("Failed to build fast Aho-Corasick automaton: {}", e))?;
+
+    // Build full prefilter (all keywords)
+    let full_prefilter = AhoCorasick::builder()
+        .match_kind(MatchKind::LeftmostFirst)
+        .build(&full_keywords)
+        .map_err(|e| format!("Failed to build full Aho-Corasick automaton: {}", e))?;
 
     // Compile individual regexes in parallel
     let compiled: Vec<_> = pattern_entries
@@ -138,7 +303,7 @@ fn load_patterns(
     }
 
     println!(
-        "{} Loaded {} patterns ({} compiled, {} skipped)",
+        "{} Loaded {} patterns ({} compiled, {} skipped) with tiered prefilter",
         "INFO:".blue(),
         pattern_entries.len(),
         regexes.len(),
@@ -149,6 +314,8 @@ fn load_patterns(
         individual_regexes: regexes,
         names: names,
         confidences: confidences,
+        fast_prefilter,
+        full_prefilter,
     })
 }
 
@@ -173,12 +340,38 @@ fn should_scan_file(file_path: &Path, include_ext: &[String], exclude_ext: &[Str
     }
 }
 
+fn should_apply_regex_patterns_optimized(
+    content: &str,
+    fast_prefilter: &AhoCorasick,
+    full_prefilter: &AhoCorasick,
+    file_size: u64,
+) -> bool {
+    let content_lower = content.to_lowercase();
+
+    // For small files (<1KB), use fast prefilter only to minimize overhead
+    if file_size < 1024 {
+        return fast_prefilter.find(&content_lower).is_some();
+    }
+
+    // For medium files (1KB-10KB), try fast first, then full if needed
+    if file_size < 10 * 1024 {
+        if fast_prefilter.find(&content_lower).is_some() {
+            return true; // Fast keyword found, proceed to regex
+        }
+        return false; // No fast keywords, skip
+    }
+
+    // For large files (>10KB), use full prefilter for comprehensive coverage
+    full_prefilter.find(&content_lower).is_some()
+}
+
 fn scan_file(
     file_path: &Path,
     patterns: &CompiledPatterns,
     include_ext: &[String],
     exclude_ext: &[String],
     max_file_size: u64,
+    max_line_length: usize,
     current_file_pb: Option<&ProgressBar>,
     current_pattern_pb: Option<&ProgressBar>,
 ) -> Result<Vec<MatchResult>, Box<dyn std::error::Error>> {
@@ -195,6 +388,17 @@ fn scan_file(
     let file = File::open(file_path)?;
     let mmap = unsafe { Mmap::map(&file)? };
     let content = std::str::from_utf8(&mmap)?;
+    let file_size = metadata.len();
+
+    // Apply optimized tiered prefilter: only proceed with regex matching if keywords are found
+    if !should_apply_regex_patterns_optimized(
+        content,
+        &patterns.fast_prefilter,
+        &patterns.full_prefilter,
+        file_size,
+    ) {
+        return Ok(Vec::new()); // Skip regex matching - no keywords found
+    }
 
     let lines: Vec<&str> = content.lines().collect();
     let mut matches = Vec::new();
@@ -222,6 +426,12 @@ fn scan_file(
 
                 for (local_line_idx, line) in chunk.iter().enumerate() {
                     let line_number = chunk_idx * chunk_size + local_line_idx + 1;
+                    
+                    // Skip lines that are too long (likely noise)
+                    if line.len() > max_line_length {
+                        continue;
+                    }
+                    
                     let mut found_high_confidence = false;
 
                     // Check high confidence patterns first
@@ -277,6 +487,11 @@ fn scan_file(
         // For small files, use sequential processing
         for (line_number, line) in lines.iter().enumerate() {
             let line_number = line_number + 1;
+
+            // Skip lines that are too long (likely noise)
+            if line.len() > max_line_length {
+                continue;
+            }
 
             // Update current pattern progress (lazy update - only every 100 lines)
             if let Some(pb) = current_pattern_pb {
@@ -390,6 +605,26 @@ fn print_json_results(results: &[MatchResult]) {
     }
 }
 
+fn print_token_results(results: &[MatchResult]) {
+    let token_results: Vec<TokenMatch> = results
+        .iter()
+        .map(|r| TokenMatch {
+            file_hash: r
+                .file_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            value: r.matched_text.clone(),
+        })
+        .collect();
+
+    match serde_json::to_string_pretty(&token_results) {
+        Ok(json) => println!("{}", json),
+        Err(e) => eprintln!("Failed to serialize token results: {}", e),
+    }
+}
+
 fn write_json_results_to_file(
     results: &[MatchResult],
     output_path: &Path,
@@ -457,7 +692,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load patterns
     let pattern_load_start = Instant::now();
-    let patterns = load_patterns(&args.database, args.high_confidence_only)?;
+    let patterns = load_patterns(&args.database, args.high_confidence_only, args.full_integrity_only)?;
     let pattern_load_time = pattern_load_start.elapsed();
 
     if patterns.individual_regexes.is_empty() {
@@ -550,6 +785,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &include_ext,
                 &exclude_ext,
                 args.max_file_size,
+                args.max_line_length,
                 Some(&current_file_pb),
                 Some(&current_pattern_pb),
             )
@@ -585,10 +821,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Output results
-    match args.format.as_str() {
-        "simple" => print_simple_results(&all_matches),
-        "json" => print_json_results(&all_matches),
-        _ => print_detailed_results(&all_matches),
+    if args.token_format {
+        print_token_results(&all_matches);
+    } else {
+        match args.format.as_str() {
+            "simple" => print_simple_results(&all_matches),
+            "json" => print_json_results(&all_matches),
+            _ => print_detailed_results(&all_matches),
+        }
     }
 
     // Write to file if output directory is specified
@@ -600,4 +840,170 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_case_insensitive_detection() {
+        // Create simple prefilters with just a few keywords
+        let fast_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&["token", "key", "password"])
+            .unwrap();
+
+        let full_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&["token", "key", "password", "api", "secret"])
+            .unwrap();
+
+        // Test various case combinations
+        let test_cases = vec![
+            ("token", true),
+            ("TOKEN", true),
+            ("Token", true),
+            ("ToKeN", true),
+            ("api_key=abc123", true),
+            ("API_KEY=ABC123", true),
+            ("Password123", true),
+            ("PASSWORD123", true),
+            ("normal text", false),
+            ("", false),
+        ];
+
+        for (content, expected) in test_cases {
+            let result = should_apply_regex_patterns_optimized(
+                content,
+                &fast_prefilter,
+                &full_prefilter,
+                1000,
+            );
+            assert_eq!(result, expected, "Failed for content: '{}'", content);
+        }
+    }
+
+    #[test]
+    fn test_extract_keywords_from_patterns() {
+        let pattern_entries = vec![
+            PatternEntry {
+                pattern: Pattern {
+                    name: "AWS API Key".to_string(),
+                    regex: "AKIA[0-9A-Z]{16}".to_string(),
+                    confidence: "high".to_string(),
+                    integrity: "full".to_string(),
+                },
+            },
+            PatternEntry {
+                pattern: Pattern {
+                    name: "Password in URL".to_string(),
+                    regex: "password=[^\\s&]+".to_string(),
+                    confidence: "high".to_string(),
+                    integrity: "full".to_string(),
+                },
+            },
+        ];
+
+        let (fast_keywords, full_keywords) = extract_tiered_keywords(&pattern_entries);
+
+        // Should contain common keywords in both lists
+        assert!(fast_keywords.contains(&"key".to_string()));
+        assert!(fast_keywords.contains(&"password".to_string()));
+        assert!(fast_keywords.contains(&"akia".to_string()));
+
+        // Full list should contain more keywords
+        assert!(full_keywords.contains(&"key".to_string()));
+        assert!(full_keywords.contains(&"password".to_string()));
+        assert!(full_keywords.contains(&"akia".to_string()));
+        assert!(full_keywords.len() >= fast_keywords.len());
+    }
+
+    #[test]
+    fn test_should_apply_regex_patterns() {
+        // Create simple prefilters
+        let fast_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&["key", "password", "token"])
+            .unwrap();
+
+        let full_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&["key", "password", "token", "api", "secret"])
+            .unwrap();
+
+        // Content with keywords should return true
+        let content_with_keywords = "This file contains an API_KEY=abc123";
+        assert!(should_apply_regex_patterns_optimized(
+            content_with_keywords,
+            &fast_prefilter,
+            &full_prefilter,
+            1000
+        ));
+
+        // Content without keywords should return false
+        let content_without_keywords = "This is just a normal file with regular content";
+        assert!(!should_apply_regex_patterns_optimized(
+            content_without_keywords,
+            &fast_prefilter,
+            &full_prefilter,
+            1000
+        ));
+
+        // Case insensitive matching
+        let content_case_insensitive = "The PASSWORD is secret";
+        assert!(should_apply_regex_patterns_optimized(
+            content_case_insensitive,
+            &fast_prefilter,
+            &full_prefilter,
+            1000
+        ));
+    }
+
+    #[test]
+    fn test_prefilter_performance() {
+        let fast_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&["key", "password", "token", "api", "secret"])
+            .unwrap();
+
+        let full_prefilter = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostFirst)
+            .build(&[
+                "key", "password", "token", "api", "secret", "auth", "cred", "hash",
+            ])
+            .unwrap();
+
+        // Test different file sizes
+        let small_content = "This is a normal file with no matching words.";
+        let large_content = "This is a large file with normal content only. ".repeat(1000);
+
+        // Small file should use fast prefilter
+        let result = should_apply_regex_patterns_optimized(
+            &small_content,
+            &fast_prefilter,
+            &full_prefilter,
+            500,
+        );
+        assert!(!result);
+
+        // Large content without keywords
+        let result = should_apply_regex_patterns_optimized(
+            &large_content,
+            &fast_prefilter,
+            &full_prefilter,
+            50000,
+        );
+        assert!(!result);
+
+        // Content with keywords
+        let content_with_keyword = large_content.clone() + " Here is a secret key";
+        let result = should_apply_regex_patterns_optimized(
+            &content_with_keyword,
+            &fast_prefilter,
+            &full_prefilter,
+            50000,
+        );
+        assert!(result);
+    }
 }
