@@ -1,5 +1,5 @@
 use aho_corasick::{AhoCorasick, MatchKind};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use colored::*;
 use fancy_regex::Regex;
 use ignore::WalkBuilder;
@@ -13,6 +13,56 @@ use memmap2::Mmap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Calculate Shannon entropy of a string
+/// Higher entropy indicates more randomness, typical of cryptographic secrets
+fn calculate_entropy(text: &str) -> f64 {
+    if text.is_empty() {
+        return 0.0;
+    }
+
+    let mut frequency_map = HashMap::new();
+    let total_chars = text.len() as f64;
+
+    // Count character frequencies
+    for ch in text.chars() {
+        *frequency_map.entry(ch).or_insert(0) += 1;
+    }
+
+    // Calculate entropy
+    let entropy = frequency_map
+        .values()
+        .map(|&count| {
+            let probability = count as f64 / total_chars;
+            -probability * probability.log2()
+        })
+        .sum::<f64>();
+
+    entropy
+}
+
+/// Check if a matched text has sufficient entropy to be considered a real secret
+/// This helps filter out false positives like variable names, function names, etc.
+fn has_sufficient_entropy(text: &str, pattern_name: &str) -> bool {
+    let entropy = calculate_entropy(text);
+
+    // Different entropy thresholds based on pattern type
+    match pattern_name {
+        // API keys and tokens typically have high entropy
+        name if name.contains("API Key") || name.contains("Token") => entropy >= 3.6,
+        // Generic secrets
+        name if name.contains("Secret") => entropy >= 3.45,
+        // Default threshold for other patterns
+        _ => entropy >= 3.5,
+    }
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+enum IntegrityFilter {
+    Part,
+    Full,
+    All,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -57,9 +107,9 @@ struct Args {
     #[arg(short = 't', long)]
     token_format: bool,
 
-    /// Only match and output rules with full integrity
-    #[arg(short = 'I', long)]
-    full_integrity_only: bool,
+    /// Integrity filter: part, full, or all
+    #[arg(short = 'I', long, default_value = "all")]
+    integrity_filter: IntegrityFilter,
 
     /// Maximum line length to scan (skip lines longer than this)
     #[arg(short = 'L', long, default_value = "1000")]
@@ -90,6 +140,7 @@ struct MatchResult {
     line_number: usize,
     pattern_name: String,
     confidence: String,
+    integrity: String,
     matched_text: String,
     line_content: String,
 }
@@ -105,6 +156,7 @@ struct CompiledPatterns {
     individual_regexes: Vec<Regex>,
     names: Vec<String>,
     confidences: Vec<String>,
+    integrities: Vec<String>,
     // Layered prefiltering for better performance
     fast_prefilter: AhoCorasick, // High-confidence keywords only
     full_prefilter: AhoCorasick, // All keywords
@@ -240,7 +292,7 @@ fn extract_tiered_keywords(pattern_entries: &[PatternEntry]) -> (Vec<String>, Ve
 fn load_patterns(
     database_path: &Path,
     high_confidence_only: bool,
-    full_integrity_only: bool,
+    integrity_filter: &IntegrityFilter,
 ) -> Result<CompiledPatterns, Box<dyn std::error::Error>> {
     let file = File::open(database_path)?;
     let db: PatternDatabase = serde_yaml::from_reader(file)?;
@@ -249,7 +301,11 @@ fn load_patterns(
         .patterns
         .into_iter()
         .filter(|entry| !high_confidence_only || entry.pattern.confidence == "high")
-        .filter(|entry| !full_integrity_only || entry.pattern.integrity == "full")
+        .filter(|entry| match integrity_filter {
+            IntegrityFilter::Part => entry.pattern.integrity == "part",
+            IntegrityFilter::Full => entry.pattern.integrity == "full",
+            IntegrityFilter::All => true,
+        })
         .collect();
 
     // Extract tiered keywords for optimized prefiltering
@@ -274,7 +330,13 @@ fn load_patterns(
         .filter_map(|(idx, entry)| {
             let pattern = &entry.pattern;
             match Regex::new(&pattern.regex) {
-                Ok(regex) => Some((idx, pattern.name.clone(), regex, pattern.confidence.clone())),
+                Ok(regex) => Some((
+                    idx,
+                    pattern.name.clone(),
+                    regex,
+                    pattern.confidence.clone(),
+                    pattern.integrity.clone(),
+                )),
                 Err(e) => {
                     eprintln!(
                         "{} Failed to compile pattern '{}': {}",
@@ -290,16 +352,18 @@ fn load_patterns(
 
     // Sort by original index to maintain order
     let mut compiled = compiled;
-    compiled.sort_by_key(|(idx, _, _, _)| *idx);
+    compiled.sort_by_key(|(idx, _, _, _, _)| *idx);
 
     let mut names = Vec::new();
     let mut regexes = Vec::new();
     let mut confidences = Vec::new();
+    let mut integrities = Vec::new();
 
-    for (_, name, regex, confidence) in compiled {
+    for (_, name, regex, confidence, integrity) in compiled {
         names.push(name);
         regexes.push(regex);
         confidences.push(confidence);
+        integrities.push(integrity);
     }
 
     println!(
@@ -314,6 +378,7 @@ fn load_patterns(
         individual_regexes: regexes,
         names: names,
         confidences: confidences,
+        integrities: integrities,
         fast_prefilter,
         full_prefilter,
     })
@@ -365,6 +430,85 @@ fn should_apply_regex_patterns_optimized(
     full_prefilter.find(&content_lower).is_some()
 }
 
+/// Check if a URL contains parameters (query string)
+fn url_has_parameters(url: &str) -> bool {
+    url.contains('?') || url.contains('&')
+}
+
+/// Extract multi-line private key content when a private key header is detected
+/// Stops at the first occurrence of the private key end marker
+fn extract_multiline_private_key(lines: &[&str], start_line: usize) -> Option<(String, usize)> {
+    if start_line >= lines.len() {
+        return None;
+    }
+
+    let current_line = lines[start_line];
+
+    // Check if this line contains a private key header
+    if !current_line.contains("-----BEGIN") || !current_line.contains("PRIVATE KEY-----") {
+        return None;
+    }
+
+    // Extract the key type from the BEGIN marker
+    let key_type = if current_line.contains("RSA") {
+        "RSA"
+    } else if current_line.contains("DSA") {
+        "DSA"
+    } else if current_line.contains("EC") {
+        "EC"
+    } else if current_line.contains("OPENSSH") {
+        "OPENSSH"
+    } else if current_line.contains("PGP") {
+        "PGP"
+    } else {
+        "" // Generic private key
+    };
+
+    let mut private_key_lines = vec![current_line.to_string()];
+    let mut current_idx = start_line + 1;
+    let mut found_end = false;
+
+    // Read lines until we find the private key end marker
+    while current_idx < lines.len() && current_idx < start_line + 1000 {
+        let line = lines[current_idx];
+        
+        // Check if this line contains the private key end marker
+        if line.contains("-----END") && line.contains("PRIVATE KEY-----") {
+            // Check if the END marker type matches the BEGIN marker type
+            let end_matches_begin = match key_type {
+                "RSA" => line.contains("RSA"),
+                "DSA" => line.contains("DSA"),
+                "EC" => line.contains("EC"),
+                "OPENSSH" => line.contains("OPENSSH"),
+                "PGP" => line.contains("PGP"),
+                _ => true, // For generic private keys, any END marker is acceptable
+            };
+            
+            if end_matches_begin {
+                private_key_lines.push(line.to_string());
+                found_end = true;
+                break;
+            } else {
+                // If we found an END marker but it doesn't match the BEGIN type,
+                // this is an incomplete key block - don't return anything
+                return None;
+            }
+        }
+        
+        private_key_lines.push(line.to_string());
+        current_idx += 1;
+    }
+
+    // If we found the end marker, return the full private key content
+    if found_end {
+        let private_key_content = private_key_lines.join("\n");
+        Some((private_key_content, current_idx - start_line + 1))
+    } else {
+        // If we didn't find the end marker, don't return anything
+        None
+    }
+}
+
 fn scan_file(
     file_path: &Path,
     patterns: &CompiledPatterns,
@@ -414,6 +558,9 @@ fn scan_file(
         );
     }
 
+    // Track lines we've already processed to avoid duplicate multi-line matches
+    let mut processed_lines = std::collections::HashSet::new();
+
     // Process lines in parallel chunks for large files
     if lines.len() > 1000 {
         let chunk_size = std::cmp::max(100, lines.len() / num_cpus::get());
@@ -423,15 +570,75 @@ fn scan_file(
             .par_bridge()
             .map(|(chunk_idx, chunk)| {
                 let mut chunk_matches = Vec::new();
+                let mut processed_lines = std::collections::HashSet::new();
 
-                for (local_line_idx, line) in chunk.iter().enumerate() {
+                let mut local_line_idx = 0;
+                while local_line_idx < chunk.len() {
+                    let line = chunk[local_line_idx];
                     let line_number = chunk_idx * chunk_size + local_line_idx + 1;
-                    
+
                     // Skip lines that are too long (likely noise)
                     if line.len() > max_line_length {
+                        local_line_idx += 1;
                         continue;
                     }
-                    
+
+                    // Skip if we've already processed this line as part of a multi-line match
+                    if processed_lines.contains(&local_line_idx) {
+                        local_line_idx += 1;
+                        continue;
+                    }
+
+                    // Check for multi-line private keys first
+                    if line.contains("-----BEGIN") && line.contains("PRIVATE KEY-----") {
+                        // For parallel processing, we need to handle multi-line matches carefully
+                        // We'll extract the private key from this chunk only
+                        let mut private_key_lines = vec![line.to_string()];
+                        let mut lines_consumed = 1;
+                        let mut found_end = false;
+
+                        // Read lines until we find the private key end marker
+                        let mut next_idx = local_line_idx + 1;
+                        while next_idx < chunk.len() && lines_consumed < 1000 {
+                            let next_line = chunk[next_idx];
+                            
+                            // Check if this line contains the private key end marker
+                            if next_line.contains("-----END") && next_line.contains("PRIVATE KEY-----") {
+                                private_key_lines.push(next_line.to_string());
+                                lines_consumed += 1;
+                                found_end = true;
+                                break;
+                            }
+                            
+                            private_key_lines.push(next_line.to_string());
+                            lines_consumed += 1;
+                            next_idx += 1;
+                        }
+
+                        // Only report if we found the complete private key block
+                        if found_end {
+                            // Mark all lines in this multi-line match as processed
+                            for i in 0..lines_consumed {
+                                processed_lines.insert(local_line_idx + i);
+                            }
+
+                            let private_key_content = private_key_lines.join("\n");
+                            chunk_matches.push(MatchResult {
+                                file_path: file_path.to_path_buf(),
+                                line_number,
+                                pattern_name: "Private Key Block".to_string(),
+                                confidence: "high".to_string(),
+                                integrity: "full".to_string(),
+                                matched_text: private_key_content,
+                                line_content: line.to_string(),
+                            });
+
+                            // Skip to the next unprocessed line
+                            local_line_idx += lines_consumed;
+                            continue;
+                        }
+                    }
+
                     let mut found_high_confidence = false;
 
                     // Check high confidence patterns first
@@ -439,12 +646,30 @@ fn scan_file(
                         if patterns.confidences[pattern_idx] == "high" {
                             if let Ok(Some(captures)) = regex.captures(line) {
                                 if let Some(matched_text) = captures.get(0) {
+                                    let matched_text_str = matched_text.as_str();
+                                    let pattern_name = &patterns.names[pattern_idx];
+
+                                    // Rule 1: For URL patterns, skip if no parameters are present
+                                    if pattern_name.contains("URL") || pattern_name.contains("URI") {
+                                        if !url_has_parameters(matched_text_str) {
+                                            continue; // Skip URL matches without parameters
+                                        }
+                                    }
+
+                                    // For full integrity patterns, apply entropy filtering
+                                    if patterns.integrities[pattern_idx] == "full" {
+                                        if !has_sufficient_entropy(matched_text_str, pattern_name) {
+                                            continue; // Skip low entropy matches for full integrity patterns
+                                        }
+                                    }
+
                                     chunk_matches.push(MatchResult {
                                         file_path: file_path.to_path_buf(),
                                         line_number,
-                                        pattern_name: patterns.names[pattern_idx].clone(),
+                                        pattern_name: pattern_name.clone(),
                                         confidence: patterns.confidences[pattern_idx].clone(),
-                                        matched_text: matched_text.as_str().to_string(),
+                                        integrity: patterns.integrities[pattern_idx].clone(),
+                                        matched_text: matched_text_str.to_string(),
                                         line_content: line.to_string(),
                                     });
                                     found_high_confidence = true;
@@ -460,12 +685,33 @@ fn scan_file(
                             if patterns.confidences[pattern_idx] == "low" {
                                 if let Ok(Some(captures)) = regex.captures(line) {
                                     if let Some(matched_text) = captures.get(0) {
+                                        let matched_text_str = matched_text.as_str();
+                                        let pattern_name = &patterns.names[pattern_idx];
+
+                                        // Rule 1: For URL patterns, skip if no parameters are present
+                                        if pattern_name.contains("URL") || pattern_name.contains("URI") {
+                                            if !url_has_parameters(matched_text_str) {
+                                                continue; // Skip URL matches without parameters
+                                            }
+                                        }
+
+                                        // For full integrity patterns, apply entropy filtering
+                                        if patterns.integrities[pattern_idx] == "full" {
+                                            if !has_sufficient_entropy(
+                                                matched_text_str,
+                                                pattern_name,
+                                            ) {
+                                                continue; // Skip low entropy matches for full integrity patterns
+                                            }
+                                        }
+
                                         chunk_matches.push(MatchResult {
                                             file_path: file_path.to_path_buf(),
                                             line_number,
-                                            pattern_name: patterns.names[pattern_idx].clone(),
+                                            pattern_name: pattern_name.clone(),
                                             confidence: patterns.confidences[pattern_idx].clone(),
-                                            matched_text: matched_text.as_str().to_string(),
+                                            integrity: patterns.integrities[pattern_idx].clone(),
+                                            matched_text: matched_text_str.to_string(),
                                             line_content: line.to_string(),
                                         });
                                     }
@@ -473,6 +719,8 @@ fn scan_file(
                             }
                         }
                     }
+
+                    local_line_idx += 1;
                 }
 
                 chunk_matches
@@ -485,11 +733,19 @@ fn scan_file(
         }
     } else {
         // For small files, use sequential processing
-        for (line_number, line) in lines.iter().enumerate() {
-            let line_number = line_number + 1;
+        let mut line_number = 1;
+        while line_number <= lines.len() {
+            let line = lines[line_number - 1];
 
             // Skip lines that are too long (likely noise)
             if line.len() > max_line_length {
+                line_number += 1;
+                continue;
+            }
+
+            // Skip if we've already processed this line as part of a multi-line match
+            if processed_lines.contains(&line_number) {
+                line_number += 1;
                 continue;
             }
 
@@ -500,6 +756,32 @@ fn scan_file(
                 }
             }
 
+            // Check for multi-line private keys first
+            if line.contains("-----BEGIN") && line.contains("PRIVATE KEY-----") {
+                if let Some((private_key_content, lines_consumed)) =
+                    extract_multiline_private_key(&lines, line_number - 1)
+                {
+                    // Mark all lines in this multi-line match as processed
+                    for i in 0..lines_consumed {
+                        processed_lines.insert(line_number + i);
+                    }
+
+                    matches.push(MatchResult {
+                        file_path: file_path.to_path_buf(),
+                        line_number,
+                        pattern_name: "Private Key Block".to_string(),
+                        confidence: "high".to_string(),
+                        integrity: "full".to_string(),
+                        matched_text: private_key_content,
+                        line_content: line.to_string(),
+                    });
+
+                    // Skip to the next unprocessed line
+                    line_number += lines_consumed;
+                    continue;
+                }
+            }
+
             let mut found_high_confidence = false;
 
             // Check high confidence patterns first
@@ -507,12 +789,35 @@ fn scan_file(
                 if patterns.confidences[pattern_idx] == "high" {
                     if let Ok(Some(captures)) = regex.captures(line) {
                         if let Some(matched_text) = captures.get(0) {
+                            let matched_text_str = matched_text.as_str();
+                            let pattern_name = &patterns.names[pattern_idx];
+
+                            // Rule 1: For URL patterns, skip if no parameters are present
+                            if pattern_name.contains("URL") || pattern_name.contains("URI") {
+                                if !url_has_parameters(matched_text_str) {
+                                    continue; // Skip URL matches without parameters
+                                }
+                            }
+
+                            // Rule 2: Skip individual private key header matches since we handle them with multi-line extraction
+                            if pattern_name == "Private Key Block" || pattern_name == "PGP Private Key Block" {
+                                continue; // Skip individual private key header matches
+                            }
+
+                            // For full integrity patterns, apply entropy filtering
+                            if patterns.integrities[pattern_idx] == "full" {
+                                if !has_sufficient_entropy(matched_text_str, pattern_name) {
+                                    continue; // Skip low entropy matches for full integrity patterns
+                                }
+                            }
+
                             matches.push(MatchResult {
                                 file_path: file_path.to_path_buf(),
                                 line_number,
-                                pattern_name: patterns.names[pattern_idx].clone(),
+                                pattern_name: pattern_name.clone(),
                                 confidence: patterns.confidences[pattern_idx].clone(),
-                                matched_text: matched_text.as_str().to_string(),
+                                integrity: patterns.integrities[pattern_idx].clone(),
+                                matched_text: matched_text_str.to_string(),
                                 line_content: line.to_string(),
                             });
                             found_high_confidence = true;
@@ -528,12 +833,35 @@ fn scan_file(
                     if patterns.confidences[pattern_idx] == "low" {
                         if let Ok(Some(captures)) = regex.captures(line) {
                             if let Some(matched_text) = captures.get(0) {
+                                let matched_text_str = matched_text.as_str();
+                                let pattern_name = &patterns.names[pattern_idx];
+
+                                // Rule 1: For URL patterns, skip if no parameters are present
+                                if pattern_name.contains("URL") || pattern_name.contains("URI") {
+                                    if !url_has_parameters(matched_text_str) {
+                                        continue; // Skip URL matches without parameters
+                                    }
+                                }
+
+                                // Rule 2: Skip individual private key header matches since we handle them with multi-line extraction
+                                if pattern_name == "Private Key Block" || pattern_name == "PGP Private Key Block" {
+                                    continue; // Skip individual private key header matches
+                                }
+
+                                // For full integrity patterns, apply entropy filtering
+                                if patterns.integrities[pattern_idx] == "full" {
+                                    if !has_sufficient_entropy(matched_text_str, pattern_name) {
+                                        continue; // Skip low entropy matches for full integrity patterns
+                                    }
+                                }
+
                                 matches.push(MatchResult {
                                     file_path: file_path.to_path_buf(),
                                     line_number,
-                                    pattern_name: patterns.names[pattern_idx].clone(),
+                                    pattern_name: pattern_name.clone(),
                                     confidence: patterns.confidences[pattern_idx].clone(),
-                                    matched_text: matched_text.as_str().to_string(),
+                                    integrity: patterns.integrities[pattern_idx].clone(),
+                                    matched_text: matched_text_str.to_string(),
                                     line_content: line.to_string(),
                                 });
                             }
@@ -541,6 +869,8 @@ fn scan_file(
                     }
                 }
             }
+
+            line_number += 1;
         }
     }
 
@@ -567,6 +897,12 @@ fn print_detailed_results(results: &[MatchResult]) {
             _ => "white",
         };
 
+        let integrity_color = match result.integrity.as_str() {
+            "full" => "green",
+            "part" => "yellow",
+            _ => "white",
+        };
+
         println!(
             "\n{} {}:{} {}",
             "→".cyan(),
@@ -578,6 +914,11 @@ fn print_detailed_results(results: &[MatchResult]) {
             "  {}: {}",
             "Confidence".dimmed(),
             result.confidence.color(confidence_color)
+        );
+        println!(
+            "  {}: {}",
+            "Integrity".dimmed(),
+            result.integrity.color(integrity_color)
         );
         println!("  {}: {}", "Match".dimmed(), result.matched_text.red());
         println!("  {}: {}", "Line".dimmed(), result.line_content.trim());
@@ -692,7 +1033,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load patterns
     let pattern_load_start = Instant::now();
-    let patterns = load_patterns(&args.database, args.high_confidence_only, args.full_integrity_only)?;
+    let patterns = load_patterns(
+        &args.database,
+        args.high_confidence_only,
+        &args.integrity_filter,
+    )?;
     let pattern_load_time = pattern_load_start.elapsed();
 
     if patterns.individual_regexes.is_empty() {
@@ -1005,5 +1350,25 @@ mod tests {
             50000,
         );
         assert!(result);
+    }
+
+    #[test]
+    fn test_entropy_filtering() {
+        // High entropy secrets should pass
+        assert!(has_sufficient_entropy(
+            "AKIAIOSFODNN7EXAMPLE",
+            "AWS API Key"
+        ));
+        assert!(has_sufficient_entropy(
+            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "GitHub Token"
+        ));
+
+        // Low entropy strings should be filtered out
+        assert!(!has_sufficient_entropy("password", "Password"));
+
+        // Different thresholds for different pattern types
+        assert!(has_sufficient_entropy("MyPass123", "Password")); // Lower threshold for passwords
+        assert!(!has_sufficient_entropy("MyPass123", "API Key")); // Higher threshold for API keys
     }
 }
