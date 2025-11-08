@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 /// 单个模式定义
 #[derive(Debug, Deserialize)]
@@ -19,11 +19,4 @@ pub struct PatternEntry {
 #[derive(Debug, Deserialize)]
 pub struct PatternDatabase {
     pub patterns: Vec<PatternEntry>,
-}
-
-/// Token匹配结果
-#[derive(Debug, Serialize)]
-pub struct TokenMatch {
-    pub file_hash: String,
-    pub value: String,
 }

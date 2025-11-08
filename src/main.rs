@@ -4,9 +4,8 @@
 
 use clap::Parser;
 use colored::Colorize;
-use crossbeam_channel::{bounded, Sender};
+use crossbeam_channel::Sender;
 use ignore::WalkBuilder;
-use rayon::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -18,12 +17,12 @@ mod analysis;
 mod output;
 mod progress;
 mod utils;
+mod database;
 
 // 导入具体功能
 use config::args::Args;
-use output::formatter::{print_simple_results, print_detailed_results, print_json_results, print_token_results};
+use database::DatabaseManager;
 use output::streaming::{create_streaming_output, StreamMessage};
-use output::streaming_json::start_json_writer_thread;
 use scanner::engine::create_patterns_arc;
 use scanner::file_scanner::scan_file;
 
@@ -43,11 +42,6 @@ impl StreamingScanner {
             total_files: 0,
             matches_found: 0,
         }
-    }
-
-    /// 添加额外的消息发送器
-    fn add_sender(&mut self, message_tx: Sender<StreamMessage>) {
-        self.message_txs.push(message_tx);
     }
 
     /// 扫描单个文件并发送结果
@@ -171,34 +165,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_files = files_to_scan.len();
     println!("{} 找到 {} 个文件需要扫描", "INFO:".blue(), total_files);
 
-    // 检查是否需要流式输出
-    let use_streaming = args.format == "streaming" || args.output_dir.is_some();
-
-    if use_streaming {
-        // 使用流式输出模式
-        run_streaming_scan(
-            &args,
-            &files_to_scan,
-            &patterns_arc,
-            &include_ext,
-            &exclude_ext,
-            total_files,
-            pattern_load_time,
-            start_time,
-        )
-    } else {
-        // 使用传统输出模式（向后兼容）
-        run_legacy_scan(
-            &args,
-            &files_to_scan,
-            &patterns_arc,
-            &include_ext,
-            &exclude_ext,
-            total_files,
-            pattern_load_time,
-            start_time,
-        )
-    }
+    // 使用流式输出模式
+    run_streaming_scan(
+        &args,
+        &files_to_scan,
+        &patterns_arc,
+        &include_ext,
+        &exclude_ext,
+        total_files,
+        pattern_load_time,
+        start_time,
+    )
 }
 
 /// 运行流式扫描
@@ -214,19 +191,6 @@ fn run_streaming_scan(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 创建消息通道
     let (streaming_output, message_tx) = create_streaming_output();
-    
-    // 如果需要JSON输出，创建JSON写入线程
-    let (json_handle, json_tx) = if let Some(output_dir) = &args.output_dir {
-        let output_path = output_dir.join("result.json");
-        let (json_tx, json_rx) = bounded::<StreamMessage>(1000);
-        
-        // 启动JSON写入线程
-        let json_handle = start_json_writer_thread(&output_path, json_rx)?;
-        
-        (Some(json_handle), Some(json_tx))
-    } else {
-        (None, None)
-    };
 
     // 启动显示线程
     let display_handle = std::thread::spawn(move || {
@@ -238,11 +202,6 @@ fn run_streaming_scan(
     // 创建扫描器
     let mut scanner = StreamingScanner::new(message_tx.clone());
     scanner.total_files = total_files;
-    
-    // 如果启用了JSON输出，添加JSON发送器
-    if let Some(ref json_tx) = json_tx {
-        scanner.add_sender(json_tx.clone());
-    }
 
     // 使用普通迭代而不是并行迭代，避免线程安全问题
     let mut errors = Vec::new();
@@ -267,24 +226,12 @@ fn run_streaming_scan(
         }
     }
 
-    // 发送完成信号到所有通道
+    // 发送完成信号
     let _ = message_tx.send(StreamMessage::Complete);
-    
-    // 如果启用了JSON输出，也发送完成信号到JSON通道
-    if let Some(json_tx) = json_tx {
-        let _ = json_tx.send(StreamMessage::Complete);
-    }
 
     // 等待显示线程完成
     if let Err(e) = display_handle.join() {
         eprintln!("{} 显示线程异常退出: {:?}", "ERROR:".red(), e);
-    }
-
-    // 等待JSON写入线程完成
-    if let Some(handle) = json_handle {
-        if let Err(e) = handle.join() {
-            eprintln!("{} JSON写入线程异常退出: {:?}", "ERROR:".red(), e);
-        }
     }
 
     let scan_time = start_time.elapsed();
@@ -298,25 +245,16 @@ fn run_streaming_scan(
         files_per_second
     );
 
-    Ok(())
-}
-
-/// 运行传统扫描（向后兼容）
-fn run_legacy_scan(
-    args: &Args,
-    files_to_scan: &[PathBuf],
-    patterns_arc: &Arc<scanner::engine::CompiledPatterns>,
-    include_ext: &[String],
-    exclude_ext: &[String],
-    total_files: usize,
-    pattern_load_time: std::time::Duration,
-    start_time: Instant,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // 使用原有的扫描逻辑
-    let all_matches: Vec<output::formatter::MatchResult> = files_to_scan
-        .par_iter()
-        .filter_map(|file_path| {
-            scan_file(
+    // 如果指定了SQLite数据库，存储结果
+    if let Some(sqlite_db_path) = &args.sqlite_db {
+        println!("{} 正在将结果存储到SQLite数据库: {}", "INFO:".blue(), sqlite_db_path.display());
+        
+        let mut db_manager = DatabaseManager::new(sqlite_db_path)?;
+        
+        // 收集所有匹配结果
+        let mut all_matches = Vec::new();
+        for file_path in files_to_scan {
+            if let Ok(matches) = scan_file(
                 file_path,
                 patterns_arc,
                 include_ext,
@@ -325,49 +263,24 @@ fn run_legacy_scan(
                 args.max_line_length,
                 None,
                 None,
-            )
-            .ok()
-        })
-        .flatten()
-        .collect();
-
-    let scan_time = start_time.elapsed();
-    let files_per_second = total_files as f64 / scan_time.as_secs_f64();
-
-    println!(
-        "\n{} 已扫描 {} 个文件，找到 {} 个匹配",
-        "SUMMARY:".green(),
-        total_files,
-        all_matches.len()
-    );
-    println!(
-        "{} 模式加载时间: {:.2?}",
-        "PERF:".cyan(),
-        pattern_load_time
-    );
-    println!("{} 总扫描时间: {:.2?}", "PERF:".cyan(), scan_time);
-    println!(
-        "{} 每秒文件数: {:.1}",
-        "PERF:".cyan(),
-        files_per_second
-    );
-
-    // 输出结果
-    if args.token_format {
-        print_token_results(&all_matches);
-    } else {
-        match args.format.as_str() {
-            "simple" => print_simple_results(&all_matches),
-            "json" => print_json_results(&all_matches),
-            _ => print_detailed_results(&all_matches),
+            ) {
+                all_matches.extend(matches);
+            }
         }
-    }
-
-    // 如果指定了输出目录，写入文件
-    if let Some(output_dir) = &args.output_dir {
-        let output_path = output_dir.join("result.json");
-        if let Err(e) = output::writer::write_json_results_to_file(&all_matches, &output_path) {
-            eprintln!("{} 写入结果到文件失败: {}", "ERROR:".red(), e);
+        
+        // 使用优化版本插入所有数据
+        match db_manager.insert_results_batch_optimized(&all_matches, None, 1000) {
+            Ok(count) => {
+                println!("{} 成功存储 {} 条记录到数据库", "SUCCESS:".green(), count);
+                
+                // 显示统计信息
+                if let Ok(stats) = db_manager.get_statistics(None) {
+                    stats.print_summary();
+                }
+            }
+            Err(e) => {
+                eprintln!("{} 存储结果到数据库失败: {}", "ERROR:".red(), e);
+            }
         }
     }
 

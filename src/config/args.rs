@@ -25,9 +25,6 @@ pub struct Args {
     #[arg(short = 'H', long)]
     pub high_confidence_only: bool,
 
-    /// 输出格式: simple, detailed, json, streaming
-    #[arg(short, long, default_value = "streaming")]
-    pub format: String,
 
     /// 要包含的文件扩展名（逗号分隔）
     #[arg(short, long, default_value = "")]
@@ -45,9 +42,9 @@ pub struct Args {
     #[arg(short = 'M', long, default_value = "10")]
     pub max_file_size: u64,
 
-    /// JSON结果的输出目录
+    /// SQLite数据库文件路径（用于存储扫描结果）
     #[arg(short = 'o', long)]
-    pub output_dir: Option<PathBuf>,
+    pub sqlite_db: Option<PathBuf>,
 
     /// 以token格式输出匹配结果
     #[arg(short = 't', long)]

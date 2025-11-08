@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::path::Path;
 
+use crate::analysis::context::ContextExtractor;
 use crate::analysis::entropy::has_sufficient_entropy;
 use crate::analysis::multiline::{extract_multiline_private_key, url_has_parameters};
 use crate::output::formatter::MatchResult;
@@ -57,6 +58,9 @@ pub fn scan_file(
 
     let lines: Vec<&str> = content.lines().collect();
     let mut matches = Vec::new();
+
+    // 创建语境提取器
+    let context_extractor = ContextExtractor::new(content);
 
     // 更新当前文件进度（延迟更新）
     if let Some(pb) = current_file_pb {
@@ -140,8 +144,9 @@ pub fn scan_file(
                                 pattern_name: "Private Key Block".to_string(),
                                 confidence: "high".to_string(),
                                 integrity: "full".to_string(),
-                                matched_text: private_key_content,
+                                matched_text: private_key_content.clone(),
                                 line_content: line.to_string(),
+                                context: private_key_content.clone(),
                             });
 
                             // 跳到下一个未处理的行
@@ -174,6 +179,17 @@ pub fn scan_file(
                                         }
                                     }
 
+                                    // 根据置信度和完整性规则提取语境
+                                    let context = if patterns.confidences[pattern_idx] == "medium" || 
+                                                   patterns.confidences[pattern_idx] == "low" || 
+                                                   patterns.integrities[pattern_idx] == "part" {
+                                        // 对于中/低置信度或part完整性，提取代码块上下文
+                                        context_extractor.extract_context(line_number)
+                                    } else {
+                                        // 对于高置信度且full完整性，context就是line本身
+                                        line.to_string()
+                                    };
+
                                     chunk_matches.push(MatchResult {
                                         file_path: file_path.to_path_buf(),
                                         line_number,
@@ -182,6 +198,7 @@ pub fn scan_file(
                                         integrity: patterns.integrities[pattern_idx].clone(),
                                         matched_text: matched_text_str.to_string(),
                                         line_content: line.to_string(),
+                                        context: context,
                                     });
                                     found_high_confidence = true;
                                     break; // 跳过此行剩余的模式
@@ -216,6 +233,17 @@ pub fn scan_file(
                                             }
                                         }
 
+                                        // 根据置信度和完整性规则提取语境
+                                        let context = if patterns.confidences[pattern_idx] == "medium" || 
+                                                       patterns.confidences[pattern_idx] == "low" || 
+                                                       patterns.integrities[pattern_idx] == "part" {
+                                            // 对于中/低置信度或part完整性，提取代码块上下文
+                                            context_extractor.extract_context(line_number)
+                                        } else {
+                                            // 对于高置信度且full完整性，context就是line本身
+                                            line.to_string()
+                                        };
+
                                         chunk_matches.push(MatchResult {
                                             file_path: file_path.to_path_buf(),
                                             line_number,
@@ -224,6 +252,7 @@ pub fn scan_file(
                                             integrity: patterns.integrities[pattern_idx].clone(),
                                             matched_text: matched_text_str.to_string(),
                                             line_content: line.to_string(),
+                                            context: context,
                                         });
                                     }
                                 }
@@ -283,8 +312,9 @@ pub fn scan_file(
                         pattern_name: "Private Key Block".to_string(),
                         confidence: "high".to_string(),
                         integrity: "full".to_string(),
-                        matched_text: private_key_content,
+                        matched_text: private_key_content.clone(),
                         line_content: line.to_string(),
+                        context: private_key_content.clone(),
                     });
 
                     // 跳到下一个未处理的行
@@ -322,6 +352,17 @@ pub fn scan_file(
                                 }
                             }
 
+                            // 根据置信度和完整性规则提取语境
+                            let context = if patterns.confidences[pattern_idx] == "medium" || 
+                                           patterns.confidences[pattern_idx] == "low" || 
+                                           patterns.integrities[pattern_idx] == "part" {
+                                // 对于中/低置信度或part完整性，提取代码块上下文
+                                context_extractor.extract_context(line_number)
+                            } else {
+                                // 对于高置信度且full完整性，context就是line本身
+                                line.to_string()
+                            };
+
                             matches.push(MatchResult {
                                 file_path: file_path.to_path_buf(),
                                 line_number,
@@ -330,6 +371,7 @@ pub fn scan_file(
                                 integrity: patterns.integrities[pattern_idx].clone(),
                                 matched_text: matched_text_str.to_string(),
                                 line_content: line.to_string(),
+                                context: context,
                             });
                             found_high_confidence = true;
                             break; // 跳过此行剩余的模式
@@ -366,6 +408,17 @@ pub fn scan_file(
                                     }
                                 }
 
+                                // 根据置信度和完整性规则提取语境
+                                let context = if patterns.confidences[pattern_idx] == "medium" || 
+                                               patterns.confidences[pattern_idx] == "low" || 
+                                               patterns.integrities[pattern_idx] == "part" {
+                                    // 对于中/低置信度或part完整性，提取代码块上下文
+                                    context_extractor.extract_context(line_number)
+                                } else {
+                                    // 对于高置信度且full完整性，context就是line本身
+                                    line.to_string()
+                                };
+
                                 matches.push(MatchResult {
                                     file_path: file_path.to_path_buf(),
                                     line_number,
@@ -374,6 +427,7 @@ pub fn scan_file(
                                     integrity: patterns.integrities[pattern_idx].clone(),
                                     matched_text: matched_text_str.to_string(),
                                     line_content: line.to_string(),
+                                    context: context,
                                 });
                             }
                         }
