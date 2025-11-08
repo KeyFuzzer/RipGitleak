@@ -1,12 +1,14 @@
 //! RipGitleak - 代码库敏感信息检测工具
 //! 
-//! 模块化重构版本，将功能按职责分离到不同模块
+//! 模块化重构版本，支持流式输出和分屏显示
 
 use clap::Parser;
 use colored::Colorize;
+use crossbeam_channel::{bounded, Sender};
 use ignore::WalkBuilder;
 use rayon::prelude::*;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 // 导入模块
@@ -20,10 +22,95 @@ mod utils;
 // 导入具体功能
 use config::args::Args;
 use output::formatter::{print_simple_results, print_detailed_results, print_json_results, print_token_results};
-use output::writer::write_json_results_to_file;
-use progress::display::create_multi_progress;
+use output::streaming::{create_streaming_output, StreamMessage};
+use output::streaming_json::start_json_writer_thread;
 use scanner::engine::create_patterns_arc;
 use scanner::file_scanner::scan_file;
+
+/// 流式扫描管理器
+struct StreamingScanner {
+    message_txs: Vec<Sender<StreamMessage>>,
+    files_scanned: usize,
+    total_files: usize,
+    matches_found: usize,
+}
+
+impl StreamingScanner {
+    fn new(message_tx: Sender<StreamMessage>) -> Self {
+        Self {
+            message_txs: vec![message_tx],
+            files_scanned: 0,
+            total_files: 0,
+            matches_found: 0,
+        }
+    }
+
+    /// 添加额外的消息发送器
+    fn add_sender(&mut self, message_tx: Sender<StreamMessage>) {
+        self.message_txs.push(message_tx);
+    }
+
+    /// 扫描单个文件并发送结果
+    fn scan_file_streaming(
+        &mut self,
+        file_path: &PathBuf,
+        patterns: &scanner::engine::CompiledPatterns,
+        include_ext: &[String],
+        exclude_ext: &[String],
+        max_file_size: u64,
+        max_line_length: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // 发送当前文件进度
+        let file_name = file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        for tx in &self.message_txs {
+            let _ = tx.send(StreamMessage::Progress {
+                current_file: file_name.clone(),
+                files_scanned: self.files_scanned,
+                total_files: self.total_files,
+                matches_found: self.matches_found,
+            });
+        }
+
+        // 扫描文件
+        let matches = scan_file(
+            file_path,
+            patterns,
+            include_ext,
+            exclude_ext,
+            max_file_size,
+            max_line_length,
+            None, // 不再使用进度条
+            None, // 不再使用进度条
+        )?;
+
+        // 发送匹配结果
+        for match_result in matches {
+            for tx in &self.message_txs {
+                let _ = tx.send(StreamMessage::Match(match_result.clone()));
+            }
+            self.matches_found += 1;
+        }
+
+        self.files_scanned += 1;
+
+        // 更新进度
+        for tx in &self.message_txs {
+            let _ = tx.send(StreamMessage::Progress {
+                current_file: file_name.clone(),
+                files_scanned: self.files_scanned,
+                total_files: self.total_files,
+                matches_found: self.matches_found,
+            });
+        }
+
+        Ok(())
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -84,65 +171,173 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_files = files_to_scan.len();
     println!("{} 找到 {} 个文件需要扫描", "INFO:".blue(), total_files);
 
-    // 基于文件数量的动态批次大小
-    let batch_size = if let Some(user_batch) = args.batch_size {
-        user_batch
+    // 检查是否需要流式输出
+    let use_streaming = args.format == "streaming" || args.output_dir.is_some();
+
+    if use_streaming {
+        // 使用流式输出模式
+        run_streaming_scan(
+            &args,
+            &files_to_scan,
+            &patterns_arc,
+            &include_ext,
+            &exclude_ext,
+            total_files,
+            pattern_load_time,
+            start_time,
+        )
     } else {
-        match total_files {
-            0..=1000 => 100,        // 小目录：一次性处理所有
-            1001..=10000 => 500,    // 中等目录：中等批次
-            10001..=100000 => 1000, // 大目录：较大批次
-            _ => 2000,              // 非常大的目录：最大批次
-        }
+        // 使用传统输出模式（向后兼容）
+        run_legacy_scan(
+            &args,
+            &files_to_scan,
+            &patterns_arc,
+            &include_ext,
+            &exclude_ext,
+            total_files,
+            pattern_load_time,
+            start_time,
+        )
+    }
+}
+
+/// 运行流式扫描
+fn run_streaming_scan(
+    args: &Args,
+    files_to_scan: &[PathBuf],
+    patterns_arc: &Arc<scanner::engine::CompiledPatterns>,
+    include_ext: &[String],
+    exclude_ext: &[String],
+    total_files: usize,
+    pattern_load_time: std::time::Duration,
+    start_time: Instant,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 创建消息通道
+    let (streaming_output, message_tx) = create_streaming_output();
+    
+    // 如果需要JSON输出，创建JSON写入线程
+    let (json_handle, json_tx) = if let Some(output_dir) = &args.output_dir {
+        let output_path = output_dir.join("result.json");
+        let (json_tx, json_rx) = bounded::<StreamMessage>(1000);
+        
+        // 启动JSON写入线程
+        let json_handle = start_json_writer_thread(&output_path, json_rx)?;
+        
+        (Some(json_handle), Some(json_tx))
+    } else {
+        (None, None)
     };
 
+    // 启动显示线程
+    let display_handle = std::thread::spawn(move || {
+        if let Err(e) = streaming_output.run_display() {
+            eprintln!("{} 显示线程错误: {}", "ERROR:".red(), e);
+        }
+    });
+
+    // 创建扫描器
+    let mut scanner = StreamingScanner::new(message_tx.clone());
+    scanner.total_files = total_files;
+    
+    // 如果启用了JSON输出，添加JSON发送器
+    if let Some(ref json_tx) = json_tx {
+        scanner.add_sender(json_tx.clone());
+    }
+
+    // 使用普通迭代而不是并行迭代，避免线程安全问题
+    let mut errors = Vec::new();
+    for file_path in files_to_scan {
+        if let Err(e) = scanner.scan_file_streaming(
+            file_path,
+            patterns_arc,
+            include_ext,
+            exclude_ext,
+            args.max_file_size,
+            args.max_line_length,
+        ) {
+            errors.push(e.to_string());
+        }
+    }
+
+    // 处理扫描错误
+    if !errors.is_empty() {
+        eprintln!("{} 扫描过程中发生 {} 个错误", "ERROR:".red(), errors.len());
+        for error in errors.iter().take(5) {
+            eprintln!("  - {}", error);
+        }
+    }
+
+    // 发送完成信号到所有通道
+    let _ = message_tx.send(StreamMessage::Complete);
+    
+    // 如果启用了JSON输出，也发送完成信号到JSON通道
+    if let Some(json_tx) = json_tx {
+        let _ = json_tx.send(StreamMessage::Complete);
+    }
+
+    // 等待显示线程完成
+    if let Err(e) = display_handle.join() {
+        eprintln!("{} 显示线程异常退出: {:?}", "ERROR:".red(), e);
+    }
+
+    // 等待JSON写入线程完成
+    if let Some(handle) = json_handle {
+        if let Err(e) = handle.join() {
+            eprintln!("{} JSON写入线程异常退出: {:?}", "ERROR:".red(), e);
+        }
+    }
+
+    let scan_time = start_time.elapsed();
+    let files_per_second = total_files as f64 / scan_time.as_secs_f64();
+
     println!(
-        "{} 使用批次大小: 每批次 {} 个文件",
-        "INFO:".blue(),
-        batch_size
+        "\n{} 扫描完成 - 模式加载: {:.2?}, 总时间: {:.2?}, 每秒文件: {:.1}",
+        "SUMMARY:".green(),
+        pattern_load_time,
+        scan_time,
+        files_per_second
     );
 
-    let scanned_files = files_to_scan.len();
-    println!("{} 找到 {} 个文件需要扫描", "INFO:".blue(), scanned_files);
+    Ok(())
+}
 
-    // 创建进度显示
-    let (_multi_progress, overall_pb, current_file_pb, current_pattern_pb) = 
-        create_multi_progress(total_files as u64);
-
-    println!("{} 开始扫描并跟踪进度...", "INFO:".blue());
-
-    // 并行文件扫描与进度跟踪
+/// 运行传统扫描（向后兼容）
+fn run_legacy_scan(
+    args: &Args,
+    files_to_scan: &[PathBuf],
+    patterns_arc: &Arc<scanner::engine::CompiledPatterns>,
+    include_ext: &[String],
+    exclude_ext: &[String],
+    total_files: usize,
+    pattern_load_time: std::time::Duration,
+    start_time: Instant,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 使用原有的扫描逻辑
     let all_matches: Vec<output::formatter::MatchResult> = files_to_scan
         .par_iter()
         .filter_map(|file_path| {
-            overall_pb.inc(1);
             scan_file(
                 file_path,
-                &patterns_arc,
-                &include_ext,
-                &exclude_ext,
+                patterns_arc,
+                include_ext,
+                exclude_ext,
                 args.max_file_size,
                 args.max_line_length,
-                Some(&current_file_pb),
-                Some(&current_pattern_pb),
+                None,
+                None,
             )
             .ok()
         })
         .flatten()
         .collect();
 
-    // 清理进度条
-    overall_pb.finish_with_message("完成");
-    current_file_pb.finish_with_message("完成");
-    current_pattern_pb.finish_with_message("完成");
-
     let scan_time = start_time.elapsed();
-    let files_per_second = scanned_files as f64 / scan_time.as_secs_f64();
+    let files_per_second = total_files as f64 / scan_time.as_secs_f64();
 
     println!(
         "\n{} 已扫描 {} 个文件，找到 {} 个匹配",
         "SUMMARY:".green(),
-        scanned_files,
+        total_files,
         all_matches.len()
     );
     println!(
@@ -171,7 +366,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 如果指定了输出目录，写入文件
     if let Some(output_dir) = &args.output_dir {
         let output_path = output_dir.join("result.json");
-        if let Err(e) = write_json_results_to_file(&all_matches, &output_path) {
+        if let Err(e) = output::writer::write_json_results_to_file(&all_matches, &output_path) {
             eprintln!("{} 写入结果到文件失败: {}", "ERROR:".red(), e);
         }
     }

@@ -25,8 +25,8 @@ pub struct Args {
     #[arg(short = 'H', long)]
     pub high_confidence_only: bool,
 
-    /// 输出格式: simple, detailed, json
-    #[arg(short, long, default_value = "detailed")]
+    /// 输出格式: simple, detailed, json, streaming
+    #[arg(short, long, default_value = "streaming")]
     pub format: String,
 
     /// 要包含的文件扩展名（逗号分隔）

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::config::patterns::TokenMatch;
 
 /// 匹配结果结构
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MatchResult {
     pub file_path: std::path::PathBuf,
     pub line_number: usize,

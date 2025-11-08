@@ -34,8 +34,16 @@ pub fn scan_file(
 
     let file = File::open(file_path)?;
     let mmap = unsafe { Mmap::map(&file)? };
-    let content = std::str::from_utf8(&mmap)?;
     let file_size = metadata.len();
+    
+    // 检查文件是否为有效的UTF-8编码，如果不是则跳过
+    let content = match std::str::from_utf8(&mmap) {
+        Ok(text) => text,
+        Err(_) => {
+            // 非UTF-8文件，直接跳过
+            return Ok(Vec::new());
+        }
+    };
 
     // 应用优化的分层预过滤：仅在找到关键词时才继续正则匹配
     if !should_apply_regex_patterns_optimized(
