@@ -6,6 +6,10 @@ use rusqlite::{Connection, params, Result as SqlResult};
 use std::path::Path;
 use crate::output::formatter::MatchResult;
 
+// 导出异步写入器
+pub mod async_writer;
+pub use async_writer::{AsyncDatabaseWriter, AsyncDatabaseManager};
+
 /// SQLite数据库管理器
 pub struct DatabaseManager {
     conn: Connection,

@@ -22,72 +22,45 @@ mod performance;
 
 // 导入具体功能
 use config::args::Args;
-use database::DatabaseManager;
+use database::{DatabaseManager, AsyncDatabaseManager};
 use output::streaming::{create_streaming_output, StreamMessage};
 use performance::get_global_perf_manager;
 use scanner::engine::create_patterns_arc;
 use scanner::file_scanner::scan_file;
 
-/// 流式扫描管理器
-struct StreamingScanner {
+/// 异步流式扫描管理器
+struct AsyncStreamingScanner {
     message_txs: Vec<Sender<StreamMessage>>,
     files_scanned: usize,
     total_files: usize,
     matches_found: usize,
-    db_manager: Option<DatabaseManager>,
-    match_buffer: Vec<crate::output::formatter::MatchResult>,
-    buffer_size: usize,
+    async_db_manager: Option<AsyncDatabaseManager>,
 }
 
-impl StreamingScanner {
-    fn new(message_tx: Sender<StreamMessage>, db_manager: Option<DatabaseManager>) -> Self {
+impl AsyncStreamingScanner {
+    fn new(message_tx: Sender<StreamMessage>, async_db_manager: Option<AsyncDatabaseManager>) -> Self {
         Self {
             message_txs: vec![message_tx],
             files_scanned: 0,
             total_files: 0,
             matches_found: 0,
-            db_manager,
-            match_buffer: Vec::new(),
-            buffer_size: 50, // 每50条记录写入一次
+            async_db_manager,
         }
     }
 
-    /// 将缓冲区中的匹配结果写入数据库
-    fn flush_buffer_to_db(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(ref mut db_manager) = self.db_manager {
-            if !self.match_buffer.is_empty() {
-                match db_manager.insert_results_batch_optimized(&self.match_buffer, None, 1000) {
-                    Ok(count) => {
-                        println!("{} 实时写入 {} 条记录到数据库", "INFO:".blue(), count);
-                    }
-                    Err(e) => {
-                        eprintln!("{} 实时写入数据库失败: {}", "ERROR:".red(), e);
-                        return Err(Box::new(e));
-                    }
-                }
-                self.match_buffer.clear();
-            }
+    /// 添加匹配结果到异步数据库管理器
+    fn add_match_to_async_db(&mut self, match_result: crate::output::formatter::MatchResult) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut async_db_manager) = self.async_db_manager {
+            async_db_manager.add_match(match_result)?;
         }
         Ok(())
     }
 
-    /// 添加匹配结果到缓冲区，并在达到阈值时写入数据库
-    fn add_match_to_buffer(&mut self, match_result: crate::output::formatter::MatchResult) -> Result<(), Box<dyn std::error::Error>> {
-        // 应用熵过滤
-        if !crate::analysis::entropy::has_sufficient_entropy(
-            &match_result.matched_text,
-            &match_result.pattern_name,
-        ) {
-            return Ok(());
+    /// 刷新异步数据库缓冲区
+    fn flush_async_db_buffer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut async_db_manager) = self.async_db_manager {
+            async_db_manager.flush_buffer()?;
         }
-
-        self.match_buffer.push(match_result);
-        
-        // 当缓冲区达到阈值时写入数据库
-        if self.match_buffer.len() >= self.buffer_size {
-            self.flush_buffer_to_db()?;
-        }
-        
         Ok(())
     }
 
@@ -137,9 +110,9 @@ impl StreamingScanner {
                 let _ = tx.send(StreamMessage::Match(match_result.clone()));
             }
             
-            // 实时添加到数据库缓冲区
-            if let Err(e) = self.add_match_to_buffer(match_result) {
-                eprintln!("{} 添加到数据库缓冲区失败: {}", "ERROR:".red(), e);
+            // 实时添加到异步数据库管理器
+            if let Err(e) = self.add_match_to_async_db(match_result) {
+                eprintln!("{} 添加到异步数据库失败: {}", "ERROR:".red(), e);
             }
             
             self.matches_found += 1;
@@ -254,16 +227,16 @@ fn run_streaming_scan(
         }
     });
 
-    // 创建数据库管理器（如果指定了SQLite数据库）
-    let db_manager = if let Some(sqlite_db_path) = &args.sqlite_db {
-        println!("{} 初始化实时数据库写入: {}", "INFO:".blue(), sqlite_db_path.display());
-        Some(DatabaseManager::new(sqlite_db_path)?)
+    // 创建异步数据库管理器（如果指定了SQLite数据库）
+    let async_db_manager = if let Some(sqlite_db_path) = &args.sqlite_db {
+        println!("{} 初始化异步数据库写入: {}", "INFO:".blue(), sqlite_db_path.display());
+        Some(AsyncDatabaseManager::new(sqlite_db_path)?)
     } else {
         None
     };
 
-    // 创建扫描器
-    let mut scanner = StreamingScanner::new(message_tx.clone(), db_manager);
+    // 创建异步扫描器
+    let mut scanner = AsyncStreamingScanner::new(message_tx.clone(), async_db_manager);
     scanner.total_files = total_files;
 
     // 使用普通迭代而不是并行迭代，避免线程安全问题
@@ -290,9 +263,9 @@ fn run_streaming_scan(
         }
     }
 
-    // 扫描完成后，刷新剩余的缓冲区数据到数据库
-    if let Err(e) = scanner.flush_buffer_to_db() {
-        eprintln!("{} 刷新剩余数据到数据库失败: {}", "ERROR:".red(), e);
+    // 扫描完成后，刷新剩余的异步数据库缓冲区
+    if let Err(e) = scanner.flush_async_db_buffer() {
+        eprintln!("{} 刷新异步数据库缓冲区失败: {}", "ERROR:".red(), e);
     }
 
     // 发送完成信号
@@ -318,11 +291,20 @@ fn run_streaming_scan(
     let perf_report = get_global_perf_manager().get_full_report();
     perf_report.print_detailed();
 
-    // 如果启用了实时数据库写入，显示最终统计信息
-    if let Some(ref db_manager) = scanner.db_manager {
-        if let Ok(stats) = db_manager.get_statistics(None) {
-            println!("\n{} 数据库统计信息:", "INFO:".blue());
-            stats.print_summary();
+    // 如果启用了异步数据库写入，显示最终统计信息并关闭
+    if let Some(async_db_manager) = scanner.async_db_manager {
+        // 关闭异步数据库管理器
+        if let Err(e) = async_db_manager.shutdown() {
+            eprintln!("{} 关闭异步数据库管理器失败: {}", "ERROR:".red(), e);
+        }
+        
+        // 使用同步数据库管理器获取统计信息
+        if let Some(sqlite_db_path) = &args.sqlite_db {
+            let db_manager = DatabaseManager::new(sqlite_db_path)?;
+            if let Ok(stats) = db_manager.get_statistics(None) {
+                println!("\n{} 数据库统计信息:", "INFO:".blue());
+                stats.print_summary();
+            }
         }
     }
 
