@@ -34,16 +34,61 @@ struct StreamingScanner {
     files_scanned: usize,
     total_files: usize,
     matches_found: usize,
+    db_manager: Option<DatabaseManager>,
+    match_buffer: Vec<crate::output::formatter::MatchResult>,
+    buffer_size: usize,
 }
 
 impl StreamingScanner {
-    fn new(message_tx: Sender<StreamMessage>) -> Self {
+    fn new(message_tx: Sender<StreamMessage>, db_manager: Option<DatabaseManager>) -> Self {
         Self {
             message_txs: vec![message_tx],
             files_scanned: 0,
             total_files: 0,
             matches_found: 0,
+            db_manager,
+            match_buffer: Vec::new(),
+            buffer_size: 50, // 每50条记录写入一次
         }
+    }
+
+    /// 将缓冲区中的匹配结果写入数据库
+    fn flush_buffer_to_db(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut db_manager) = self.db_manager {
+            if !self.match_buffer.is_empty() {
+                match db_manager.insert_results_batch_optimized(&self.match_buffer, None, 1000) {
+                    Ok(count) => {
+                        println!("{} 实时写入 {} 条记录到数据库", "INFO:".blue(), count);
+                    }
+                    Err(e) => {
+                        eprintln!("{} 实时写入数据库失败: {}", "ERROR:".red(), e);
+                        return Err(Box::new(e));
+                    }
+                }
+                self.match_buffer.clear();
+            }
+        }
+        Ok(())
+    }
+
+    /// 添加匹配结果到缓冲区，并在达到阈值时写入数据库
+    fn add_match_to_buffer(&mut self, match_result: crate::output::formatter::MatchResult) -> Result<(), Box<dyn std::error::Error>> {
+        // 应用熵过滤
+        if !crate::analysis::entropy::has_sufficient_entropy(
+            &match_result.matched_text,
+            &match_result.pattern_name,
+        ) {
+            return Ok(());
+        }
+
+        self.match_buffer.push(match_result);
+        
+        // 当缓冲区达到阈值时写入数据库
+        if self.match_buffer.len() >= self.buffer_size {
+            self.flush_buffer_to_db()?;
+        }
+        
+        Ok(())
     }
 
     /// 扫描单个文件并发送结果
@@ -86,11 +131,17 @@ impl StreamingScanner {
             None, // 不再使用进度条
         )?;
 
-        // 发送匹配结果
+        // 发送匹配结果并实时写入数据库
         for match_result in matches {
             for tx in &self.message_txs {
                 let _ = tx.send(StreamMessage::Match(match_result.clone()));
             }
+            
+            // 实时添加到数据库缓冲区
+            if let Err(e) = self.add_match_to_buffer(match_result) {
+                eprintln!("{} 添加到数据库缓冲区失败: {}", "ERROR:".red(), e);
+            }
+            
             self.matches_found += 1;
         }
 
@@ -203,8 +254,16 @@ fn run_streaming_scan(
         }
     });
 
+    // 创建数据库管理器（如果指定了SQLite数据库）
+    let db_manager = if let Some(sqlite_db_path) = &args.sqlite_db {
+        println!("{} 初始化实时数据库写入: {}", "INFO:".blue(), sqlite_db_path.display());
+        Some(DatabaseManager::new(sqlite_db_path)?)
+    } else {
+        None
+    };
+
     // 创建扫描器
-    let mut scanner = StreamingScanner::new(message_tx.clone());
+    let mut scanner = StreamingScanner::new(message_tx.clone(), db_manager);
     scanner.total_files = total_files;
 
     // 使用普通迭代而不是并行迭代，避免线程安全问题
@@ -231,6 +290,11 @@ fn run_streaming_scan(
         }
     }
 
+    // 扫描完成后，刷新剩余的缓冲区数据到数据库
+    if let Err(e) = scanner.flush_buffer_to_db() {
+        eprintln!("{} 刷新剩余数据到数据库失败: {}", "ERROR:".red(), e);
+    }
+
     // 发送完成信号
     let _ = message_tx.send(StreamMessage::Complete);
 
@@ -254,62 +318,11 @@ fn run_streaming_scan(
     let perf_report = get_global_perf_manager().get_full_report();
     perf_report.print_detailed();
 
-    // 如果指定了SQLite数据库，存储结果
-    if let Some(sqlite_db_path) = &args.sqlite_db {
-        println!("{} 正在将结果存储到SQLite数据库: {}", "INFO:".blue(), sqlite_db_path.display());
-        
-        let mut db_manager = DatabaseManager::new(sqlite_db_path)?;
-        
-        // 收集所有匹配结果，应用熵过滤
-        let mut all_matches = Vec::new();
-        for file_path in files_to_scan {
-            if let Ok(matches) = scan_file(
-                file_path,
-                patterns_arc,
-                include_ext,
-                exclude_ext,
-                args.max_file_size,
-                args.max_line_length,
-                args.enable_encoding_detection,
-                None,
-                None,
-            ) {
-                // 应用额外的熵过滤，确保只存储高熵的匹配
-                let filtered_matches: Vec<_> = matches
-                    .into_iter()
-                    .filter(|result| {
-                        // 对于完整完整性模式，应用熵过滤
-                        if result.integrity == "full" {
-                            crate::analysis::entropy::has_sufficient_entropy(
-                                &result.matched_text,
-                                &result.pattern_name,
-                            )
-                        } else {
-                            // 对于部分完整性模式，也应用熵过滤
-                            crate::analysis::entropy::has_sufficient_entropy(
-                                &result.matched_text,
-                                &result.pattern_name,
-                            )
-                        }
-                    })
-                    .collect();
-                all_matches.extend(filtered_matches);
-            }
-        }
-        
-        // 使用优化版本插入所有数据
-        match db_manager.insert_results_batch_optimized(&all_matches, None, 1000) {
-            Ok(count) => {
-                println!("{} 成功存储 {} 条记录到数据库", "SUCCESS:".green(), count);
-                
-                // 显示统计信息
-                if let Ok(stats) = db_manager.get_statistics(None) {
-                    stats.print_summary();
-                }
-            }
-            Err(e) => {
-                eprintln!("{} 存储结果到数据库失败: {}", "ERROR:".red(), e);
-            }
+    // 如果启用了实时数据库写入，显示最终统计信息
+    if let Some(ref db_manager) = scanner.db_manager {
+        if let Ok(stats) = db_manager.get_statistics(None) {
+            println!("\n{} 数据库统计信息:", "INFO:".blue());
+            stats.print_summary();
         }
     }
 
