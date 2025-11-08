@@ -57,4 +57,7 @@ pub struct Args {
     /// 要扫描的最大行长度（跳过超过此长度的行）
     #[arg(short = 'L', long, default_value = "1000")]
     pub max_line_length: usize,
+
+    #[arg(long)]
+    pub enable_encoding_detection: bool,
 }

@@ -18,11 +18,13 @@ mod output;
 mod progress;
 mod utils;
 mod database;
+mod performance;
 
 // 导入具体功能
 use config::args::Args;
 use database::DatabaseManager;
 use output::streaming::{create_streaming_output, StreamMessage};
+use performance::get_global_perf_manager;
 use scanner::engine::create_patterns_arc;
 use scanner::file_scanner::scan_file;
 
@@ -53,6 +55,7 @@ impl StreamingScanner {
         exclude_ext: &[String],
         max_file_size: u64,
         max_line_length: usize,
+        enable_encoding_detection: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // 发送当前文件进度
         let file_name = file_path
@@ -78,6 +81,7 @@ impl StreamingScanner {
             exclude_ext,
             max_file_size,
             max_line_length,
+            enable_encoding_detection,
             None, // 不再使用进度条
             None, // 不再使用进度条
         )?;
@@ -213,6 +217,7 @@ fn run_streaming_scan(
             exclude_ext,
             args.max_file_size,
             args.max_line_length,
+            args.enable_encoding_detection,
         ) {
             errors.push(e.to_string());
         }
@@ -245,13 +250,17 @@ fn run_streaming_scan(
         files_per_second
     );
 
+    // 显示详细性能报告
+    let perf_report = get_global_perf_manager().get_full_report();
+    perf_report.print_detailed();
+
     // 如果指定了SQLite数据库，存储结果
     if let Some(sqlite_db_path) = &args.sqlite_db {
         println!("{} 正在将结果存储到SQLite数据库: {}", "INFO:".blue(), sqlite_db_path.display());
         
         let mut db_manager = DatabaseManager::new(sqlite_db_path)?;
         
-        // 收集所有匹配结果
+        // 收集所有匹配结果，应用熵过滤
         let mut all_matches = Vec::new();
         for file_path in files_to_scan {
             if let Ok(matches) = scan_file(
@@ -261,10 +270,30 @@ fn run_streaming_scan(
                 exclude_ext,
                 args.max_file_size,
                 args.max_line_length,
+                args.enable_encoding_detection,
                 None,
                 None,
             ) {
-                all_matches.extend(matches);
+                // 应用额外的熵过滤，确保只存储高熵的匹配
+                let filtered_matches: Vec<_> = matches
+                    .into_iter()
+                    .filter(|result| {
+                        // 对于完整完整性模式，应用熵过滤
+                        if result.integrity == "full" {
+                            crate::analysis::entropy::has_sufficient_entropy(
+                                &result.matched_text,
+                                &result.pattern_name,
+                            )
+                        } else {
+                            // 对于部分完整性模式，也应用熵过滤
+                            crate::analysis::entropy::has_sufficient_entropy(
+                                &result.matched_text,
+                                &result.pattern_name,
+                            )
+                        }
+                    })
+                    .collect();
+                all_matches.extend(filtered_matches);
             }
         }
         

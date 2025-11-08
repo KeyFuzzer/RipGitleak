@@ -5,7 +5,8 @@ use std::fs::File;
 use std::path::Path;
 
 use crate::analysis::context::ContextExtractor;
-use crate::analysis::entropy::has_sufficient_entropy;
+use crate::analysis::encoding::analyze_line_for_encoded_secrets;
+use crate::analysis::entropy::{has_sufficient_entropy, ContextAwareEntropyAnalyzer};
 use crate::analysis::multiline::{extract_multiline_private_key, url_has_parameters};
 use crate::output::formatter::MatchResult;
 use crate::scanner::engine::CompiledPatterns;
@@ -20,6 +21,7 @@ pub fn scan_file(
     exclude_ext: &[String],
     max_file_size: u64,
     max_line_length: usize,
+    enable_encoding_detection: bool,
     current_file_pb: Option<&indicatif::ProgressBar>,
     current_pattern_pb: Option<&indicatif::ProgressBar>,
 ) -> Result<Vec<MatchResult>, Box<dyn std::error::Error>> {
@@ -260,6 +262,10 @@ pub fn scan_file(
                         }
                     }
 
+                    // 检查编码的密钥（在所有模式检查之后）
+                    let encoded_secrets = analyze_line_for_encoded_secrets(line, line_number, file_path);
+                    chunk_matches.extend(encoded_secrets);
+
                     local_line_idx += 1;
                 }
 
@@ -434,6 +440,10 @@ pub fn scan_file(
                     }
                 }
             }
+
+            // 检查编码的密钥（在所有模式检查之后）
+            let encoded_secrets = analyze_line_for_encoded_secrets(line, line_number, file_path);
+            matches.extend(encoded_secrets);
 
             line_number += 1;
         }
