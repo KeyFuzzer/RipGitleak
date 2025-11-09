@@ -132,7 +132,7 @@ patterns:
 - pattern:
     confidence: low
     name: Secret in Variable
-    regex: '(?i)(secret|token)[''\""\s:=]+[a-zA-Z0-9\-_.]{8,100}'
+    regex: '(?i)\b(secret|token)\b\s*=\s*[''\""]?[a-zA-Z0-9\-_.]{8,100}[''\""]?'
     integrity: part
 - pattern:
     confidence: medium
@@ -343,11 +343,6 @@ patterns:
     confidence: low
     name: Bugsnag API Key (Hex-32)
     regex: '[a-f0-9]{32}'
-    integrity: part
-- pattern:
-    confidence: low
-    name: Datadog API Key (32)
-    regex: '[a-z0-9]{32}'
     integrity: part
 - pattern:
     confidence: medium

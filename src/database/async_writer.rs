@@ -1,5 +1,5 @@
 //! 异步数据库写入器
-//! 
+//!
 //! 提供高性能的异步SQLite写入支持
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -22,22 +22,22 @@ impl AsyncDatabaseWriter {
     pub fn new(db_path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let (sender, receiver) = unbounded();
         let (shutdown_sender, shutdown_receiver) = unbounded();
-        
+
         // 创建数据库管理器
         let db_manager = DatabaseManager::new(db_path)?;
-        
+
         // 启动异步写入线程
         let worker_handle = thread::spawn(move || {
             Self::database_writer_worker(receiver, shutdown_receiver, db_manager);
         });
-        
+
         Ok(Self {
             sender,
             shutdown_sender,
             worker_handle: Some(worker_handle),
         })
     }
-    
+
     /// 数据库写入工作线程
     fn database_writer_worker(
         receiver: Receiver<Vec<MatchResult>>,
@@ -46,14 +46,14 @@ impl AsyncDatabaseWriter {
     ) {
         let mut batch_count = 0;
         let mut total_records = 0;
-        
+
         loop {
             // 检查是否收到关闭信号
             if shutdown_receiver.try_recv().is_ok() {
                 println!("INFO: 数据库写入线程收到关闭信号");
                 break;
             }
-            
+
             // 尝试接收数据，带超时以避免无限阻塞
             match receiver.recv_timeout(Duration::from_millis(100)) {
                 Ok(matches) => {
@@ -62,9 +62,10 @@ impl AsyncDatabaseWriter {
                             Ok(count) => {
                                 batch_count += 1;
                                 total_records += count;
-                                if batch_count % 10 == 0 {
-                                    println!("INFO: 异步写入第 {} 批次，累计 {} 条记录", 
-                                        batch_count, total_records);
+                                
+                                // 每处理一定批次后输出进度
+                                if batch_count % 100 == 0 {
+                                    println!("异步写入进度: 已处理 {} 批次，{} 条记录", batch_count, total_records);
                                 }
                             }
                             Err(e) => {
@@ -83,46 +84,57 @@ impl AsyncDatabaseWriter {
                 }
             }
         }
-        
+
         // 处理剩余的数据
         let mut remaining_records = 0;
+        let mut remaining_batches = 0;
         while let Ok(matches) = receiver.try_recv() {
             if !matches.is_empty() {
                 if let Ok(count) = db_manager.insert_results_batch_optimized(&matches, None, 1000) {
                     remaining_records += count;
+                    remaining_batches += 1;
                 }
             }
         }
-        
-        if remaining_records > 0 {
-            println!("INFO: 处理剩余 {} 条记录", remaining_records);
-        }
-        
-        println!("INFO: 数据库写入线程完成，总共处理 {} 批次，{} 条记录", 
-            batch_count, total_records + remaining_records);
+
+        println!(
+            "INFO: 数据库写入线程完成，总共处理 {} 批次，{} 条记录 (剩余 {} 批次)",
+            batch_count,
+            total_records + remaining_records,
+            remaining_batches
+        );
     }
-    
+
     /// 异步发送匹配结果到数据库
-    pub fn send_matches(&self, matches: Vec<MatchResult>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_matches(
+        &self,
+        matches: Vec<MatchResult>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if !matches.is_empty() {
-            self.sender.send(matches)
+            self.sender
+                .send(matches)
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
         }
         Ok(())
     }
-    
+
     /// 关闭异步写入器
     pub fn shutdown(mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 发送关闭信号
-        self.shutdown_sender.send(())
+        self.shutdown_sender
+            .send(())
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        
+
         // 等待工作线程完成
         if let Some(handle) = self.worker_handle.take() {
-            handle.join()
-                .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("{:?}", e))))?;
+            handle.join().map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("{:?}", e),
+                ))
+            })?;
         }
-        
+
         println!("INFO: 异步数据库写入器已关闭");
         Ok(())
     }
@@ -151,12 +163,15 @@ impl AsyncDatabaseManager {
         Ok(Self {
             writer: Some(writer),
             buffer: Vec::new(),
-            buffer_size: 100, // 每100条记录发送一次
+            buffer_size: 1000, // 每1000条记录发送一次，提高性能
         })
     }
-    
+
     /// 添加匹配结果到缓冲区
-    pub fn add_match(&mut self, match_result: MatchResult) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add_match(
+        &mut self,
+        match_result: MatchResult,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // 应用熵过滤
         if !crate::analysis::entropy::has_sufficient_entropy(
             &match_result.matched_text,
@@ -164,17 +179,17 @@ impl AsyncDatabaseManager {
         ) {
             return Ok(());
         }
-        
+
         self.buffer.push(match_result);
-        
+
         // 当缓冲区达到阈值时发送到异步写入器
         if self.buffer.len() >= self.buffer_size {
             self.flush_buffer()?;
         }
-        
+
         Ok(())
     }
-    
+
     /// 刷新缓冲区到异步写入器
     pub fn flush_buffer(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ref writer) = self.writer {
@@ -185,17 +200,17 @@ impl AsyncDatabaseManager {
         }
         Ok(())
     }
-    
+
     /// 关闭异步数据库管理器
     pub fn shutdown(mut self) -> Result<(), Box<dyn std::error::Error>> {
         // 刷新剩余缓冲区数据
         self.flush_buffer()?;
-        
+
         // 关闭异步写入器
         if let Some(writer) = self.writer.take() {
             writer.shutdown()?;
         }
-        
+
         Ok(())
     }
 }

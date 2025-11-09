@@ -6,7 +6,7 @@ use std::path::Path;
 
 use crate::analysis::context::ContextExtractor;
 use crate::analysis::encoding::analyze_line_for_encoded_secrets;
-use crate::analysis::entropy::{has_sufficient_entropy, ContextAwareEntropyAnalyzer};
+use crate::analysis::entropy::has_sufficient_entropy;
 use crate::analysis::multiline::{extract_multiline_private_key, url_has_parameters};
 use crate::output::formatter::MatchResult;
 use crate::scanner::engine::CompiledPatterns;
@@ -174,10 +174,10 @@ pub fn scan_file(
                                         }
                                     }
 
-                                    // 对于完整完整性模式，应用熵过滤
-                                    if patterns.integrities[pattern_idx] == "full" {
+                                    // 对于完整完整性和部分完整性模式，应用熵过滤
+                                    if patterns.integrities[pattern_idx] == "full" || patterns.integrities[pattern_idx] == "part" {
                                         if !has_sufficient_entropy(matched_text_str, pattern_name) {
-                                            continue; // 跳过低熵匹配的完整完整性模式
+                                            continue; // 跳过低熵匹配
                                         }
                                     }
 
@@ -225,13 +225,13 @@ pub fn scan_file(
                                             }
                                         }
 
-                                        // 对于完整完整性模式，应用熵过滤
-                                        if patterns.integrities[pattern_idx] == "full" {
+                                        // 对于完整完整性和部分完整性模式，应用熵过滤
+                                        if patterns.integrities[pattern_idx] == "full" || patterns.integrities[pattern_idx] == "part" {
                                             if !has_sufficient_entropy(
                                                 matched_text_str,
                                                 pattern_name,
                                             ) {
-                                                continue; // 跳过低熵匹配的完整完整性模式
+                                                continue; // 跳过低熵匹配
                                             }
                                         }
 
@@ -351,10 +351,10 @@ pub fn scan_file(
                                 continue; // 跳过单个私钥头匹配
                             }
 
-                            // 对于完整完整性模式，应用熵过滤
-                            if patterns.integrities[pattern_idx] == "full" {
+                            // 对于完整完整性和部分完整性模式，应用熵过滤
+                            if patterns.integrities[pattern_idx] == "full" || patterns.integrities[pattern_idx] == "part" {
                                 if !has_sufficient_entropy(matched_text_str, pattern_name) {
-                                    continue; // 跳过低熵匹配的完整完整性模式
+                                    continue; // 跳过低熵匹配
                                 }
                             }
 
@@ -407,10 +407,10 @@ pub fn scan_file(
                                     continue; // 跳过单个私钥头匹配
                                 }
 
-                                // 对于完整完整性模式，应用熵过滤
-                                if patterns.integrities[pattern_idx] == "full" {
+                                // 对于完整完整性和部分完整性模式，应用熵过滤
+                                if patterns.integrities[pattern_idx] == "full" || patterns.integrities[pattern_idx] == "part" {
                                     if !has_sufficient_entropy(matched_text_str, pattern_name) {
-                                        continue; // 跳过低熵匹配的完整完整性模式
+                                        continue; // 跳过低熵匹配
                                     }
                                 }
 

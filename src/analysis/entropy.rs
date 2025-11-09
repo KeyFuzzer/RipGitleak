@@ -165,6 +165,11 @@ pub fn has_sufficient_entropy(text: &str, pattern_name: &str) -> bool {
         return true; // 禁用熵过滤，允许弱口令检测
     }
     
+    // 过滤面向对象语法，避免误判
+    if text.contains("::") || text.contains("->") || text.contains(".") {
+        return false; // 跳过面向对象语法
+    }
+    
     has_sufficient_entropy_context_aware(text, pattern_name, "", None)
 }
 

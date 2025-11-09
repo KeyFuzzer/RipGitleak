@@ -25,6 +25,8 @@ RipGitleak 使用 SQLite 数据库存储代码扫描结果，为大型代码库�
 | `file_hash` | `TEXT` | 可为空 | 文件哈希值，用于文件去重（可选） |
 | `scan_session` | `TEXT` | 可为空 | 扫描会话标识，用于区分不同扫描会话 |
 
+**注意**: 在实际插入数据时，`file_hash` 字段目前未被使用，所有插入操作都将其设为 NULL。
+
 ## 字段详细说明
 
 ### 主键字段
@@ -125,12 +127,63 @@ WHERE pattern_name = 'AWS Access Key ID'
 AND integrity = 'full';
 ```
 
+## 数据库写入器实现
+
+RipGitleak 提供了两种数据库写入器来满足不同场景的需求：
+
+### 同步写入器 (`SyncDatabaseManager`)
+
+同步写入器提供简单可靠的同步写入支持，适用于小型项目或需要即时反馈的场景。
+
+**特点：**
+- 同步操作，立即返回结果
+- 自动批量插入，默认每1000条记录批量插入一次
+- 内置熵过滤，避免存储低熵的误报
+- 自动进度报告
+
+**使用示例：**
+```rust
+let mut sync_manager = SyncDatabaseManager::new(db_path)?;
+sync_manager.add_match(match_result)?;
+sync_manager.flush_buffer()?;
+sync_manager.shutdown()?;
+```
+
+### 异步写入器 (`AsyncDatabaseManager`)
+
+异步写入器提供高性能的异步写入支持，适用于大型代码库扫描。
+
+**特点：**
+- 异步操作，不阻塞主线程
+- 使用独立的工作线程处理数据库写入
+- 内置缓冲区管理，默认每1000条记录发送一次
+- 自动熵过滤和批量优化
+- 优雅关闭机制
+
+**使用示例：**
+```rust
+let mut async_manager = AsyncDatabaseManager::new(db_path)?;
+async_manager.add_match(match_result)?;
+async_manager.flush_buffer()?;
+async_manager.shutdown()?;
+```
+
+### 熵过滤机制
+
+两种写入器都内置了熵过滤机制，在存储前会调用 `has_sufficient_entropy` 函数检查匹配文本的熵值，避免存储低熵的误报。这包括：
+- 过滤面向对象语法（如 `Token::GetTokenInfo`）
+- 过滤低熵的变量赋值（如 `token = get_info`）
+- 保留高熵的真实密钥
+
 ## 使用建议
 
 1. **批量操作**: 对于大量数据插入，使用 `insert_results_batch_optimized` 方法
 2. **索引利用**: 查询时尽量使用已建立索引的字段作为条件
 3. **会话管理**: 使用 `scan_session` 字段区分不同扫描任务
 4. **定期维护**: 对于长期使用的数据库，定期执行 `ANALYZE` 命令优化查询性能
+5. **写入器选择**: 
+   - 小型项目：使用同步写入器
+   - 大型代码库：使用异步写入器提高性能
 
 ## 性能特点
 
